@@ -170,7 +170,7 @@ class Field(object):
 
                 # IF VARARG IS A SEPARATOR
                 if isinstance(vararg, Separator):
-                    if vararg.mode is 'transmission':
+                    if vararg.mode == 'transmission':
                         if self._verbose is True:
                             print('Transmission through separator')
                     else:
@@ -556,7 +556,7 @@ class Field(object):
         p_arrow = Arrow3D([0, p*np.cos(2*Psi)*np.cos(2*Chi)],
                           [0, p*np.sin(2*Psi)*np.cos(2*Chi)],
                           [0, p*np.sin(2*Chi)], mutation_scale=10,
-                          lw=2, arrowstyle="-|>", color=cmap(2))
+                          lw=4, arrowstyle="-|>", color=cmap(2))
 
         # PROJECTION OF THE POLARIZATION ON THE (X,Y) PLAN
         x0 = [0, p*np.cos(2*Psi)*np.cos(2*Chi)]

@@ -14,6 +14,7 @@ Created on Fri Jun 15 15:19:33 2018
 
 import numpy as np
 import scipy as sc
+import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from arrow3D import Arrow3D
@@ -110,7 +111,8 @@ class Detector(object):
 
     def disp_intensity(self):
         fig = plt.figure(self._display_id)
-        fig.canvas.set_window_title(self._camera_name)
+        if not ('inline' in matplotlib.get_backend()):
+            fig.canvas.set_window_title(self._camera_name)
         plt.imshow(np.sum(np.abs((self._complex_amplitude)**2), axis=2))
         plt.title('Intensity (in ???)')
         plt.show()
