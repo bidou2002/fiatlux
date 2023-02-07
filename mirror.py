@@ -43,9 +43,10 @@ class Mirror(Polarizer):
 
     # REPRESENTER
     def __str__(self):
-        return ("* reflectance : {} \n"
-                "* angle : {} (rad)\n"
-                "* phase_retardation : {} (rad)"
+        return ("<mirror>\n"
+                "  * reflectance : {} \n"
+                "  * angle : {} (rad)\n"
+                "  * phase_retardation : {} (rad)"
                 .format(self._reflectance, self._angle,
                         self._phase_retardation))
 

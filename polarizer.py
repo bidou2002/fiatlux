@@ -43,9 +43,10 @@ class Polarizer(object):
 
     # REPRESENTER
     def __str__(self):
-        return ("* polarizer_type : {}\n"
-                "* angle : {} (rad)\n"
-                "* jones_matrix : {}"
+        return ("<polarizer>\n"
+                "  * polarizer_type : {}\n"
+                "  * angle : {} (rad)\n"
+                "  * jones_matrix : {}"
                 .format(self._polar_type, self._angle, self._jones_matrix))
 
     '''####################################################################'''

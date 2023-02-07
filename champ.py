@@ -30,7 +30,18 @@ from slm import SLM
 
 class Field(object):
 
-    """Un champ est caractérisée par:
+    """field_size
+    scale: default is 4e-5
+    wavelength: default is 550e-9
+    verbose: default is False
+    field_map: default is None
+    incidence_angles: default is [0, 0]
+    gaussian_center: default is 0
+    gaussian_variance: default is 1
+    stokes_parameters: default is None
+    spherical_stokes_parameters: default is None
+
+    Un champ est caractérisée par:
     - la taille de la carte [en pixel] ... (l'enfer en 256 points centré sur
                                             2x2 pixels)
     - l'échelle du pixel [m/pixel]
@@ -103,10 +114,10 @@ class Field(object):
                     self._incidence_angles[1]*y_grid))
         # GAUSSIAN
         elif self._field_map == 'gaussian':
-            self._center = kwargs.get('gaussian_center', 0)
+            self._center = kwargs.get('gaussian_center', [0,0])
             self._variance = kwargs.get('gaussian_variance', 1)
             self._complex_amplitude[:, :, 0] = np.exp(-(
-                    (x_grid-self._center)**2 + (y_grid-self._center)**2) /
+                    (x_grid-self._center[0])**2 + (y_grid-self._center[1])**2) /
                 (2*self._variance))
         else:
             self._complex_amplitude[:, :, 0] = np.ones((self._field_size,
@@ -151,9 +162,10 @@ class Field(object):
 
     # REPRESENTERS
     def __str__(self):
-        return ("* field_size : {} (px)\n"
-                "* scale : {} (px/m)\n"
-                "* wavelength : {} (m)"
+        return ("<field>\n"
+                "  * field_size : {} (px)\n"
+                "  * scale : {} (px/m)\n"
+                "  * wavelength : {} (m)"
                 .format(self._field_size, self._scale, self._wavelength))
 
     # FIELD*VARARG - MAKES FIELD GOING THROUGH VARARG
