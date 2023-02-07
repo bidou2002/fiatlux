@@ -530,7 +530,6 @@ class Field(object):
         # GET THE SPHERICAL POLARIZATION COORDINATES
         I0, p, Psi, Chi = self._process_spherical_stokes_parameters(
                 self._stokes_parameters)
-        print(Psi)
         Psi = Psi/2
         Chi = Chi/2
 
