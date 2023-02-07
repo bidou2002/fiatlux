@@ -37,8 +37,8 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduc
 ## Authors
 
 * **Pierre Janin-Potiron** - *Initial work* - [bidou2002](https://github.com/bidou2002)
-* **Yoann Brûlé** - *Initial work* - [bidou2002](https://github.com/bidou2002)
-* **Olivier Fauvarque** - *Initial work* - [bidou2002](https://github.com/bidou2002)
+* **Yoann Brûlé** - *Initial work*
+* **Olivier Fauvarque** - *Initial work*
 
 See also the list of [contributors](https://github.com/bidou2002/Fiatlux/contributors) who participated in this project.
 
