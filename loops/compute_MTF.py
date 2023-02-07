@@ -18,7 +18,7 @@ from propagator import Propagator
 from masque import *
 import matplotlib.pyplot as plt
 import time
-from FindCaptureRange import FindCaptureRange
+from loops.find_capture_range import FindCaptureRange
 
 #%%
 
