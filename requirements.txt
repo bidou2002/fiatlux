@@ -1,0 +1,5 @@
+numpy==1.23.5
+matplotlib==3.6.3
+mpl_toolkits
+scipy==1.10.0
+copy
