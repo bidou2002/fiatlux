@@ -20,15 +20,11 @@ A step by step series of examples that tell you how to get a development environ
 
 1. Clone the repository:
 
-git clone https://github.com/bidou2002/Fiatlux.git
-
-markdown
+`git clone https://github.com/bidou2002/Fiatlux.git`
 
 2. Install the dependencies:
 
-pip install -r requirements.txt
-
-markdown
+`pip install -r requirements.txt`
 
 ## Built With
 
