@@ -1,0 +1,18 @@
+Metadata-Version: 2.1
+Name: fiatlux
+Version: 0.1.0
+Summary: Fiatlux is a project that aims to offer a versatile environment for multiple optical simulation
+Home-page: https://github.com/bidou2002/fiatlux
+Author: Pierre Janin-Potiron
+Author-email: pierre.janinpotiron@gmail.com
+License: MIT License
+Classifier: Development Status :: 1 - Planning
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: BSD License
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Programming Language :: Python :: 2
+Classifier: Programming Language :: Python :: 2.7
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.4
+Classifier: Programming Language :: Python :: 3.5
+License-File: LICENSE

@@ -16,16 +16,16 @@ import scipy as sc
 import matplotlib.pyplot as plt
 import copy
 from mpl_toolkits.mplot3d import Axes3D
-from arrow3D import Arrow3D
-from polarizer import Polarizer
-from mirror import Mirror
-from masque import *
-from detecteur import Detector
-from propagator import Propagator
-from lentille import Lens
-from pupille import Pupil
-from separateur import Separator
-from slm import SLM
+from .arrow3D import Arrow3D
+from .polarizer import Polarizer
+from .mirror import Mirror
+from .masque import *
+from .detecteur import Detector
+from .propagator import Propagator
+from .lentille import Lens
+from .pupille import Pupil
+from .separateur import Separator
+from .slm import SLM
 
 
 class Field(object):

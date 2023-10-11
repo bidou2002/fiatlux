@@ -16,10 +16,10 @@ Created on Fri Aug  3 09:38:13 2018
 import numpy as np
 import scipy as sc
 import matplotlib.pyplot as plt
-from polarizer import Polarizer
-from mirror import Mirror
-from masque import Mask
-from detecteur import Detector
+from .polarizer import Polarizer
+from .mirror import Mirror
+from .masque import Mask
+from .detecteur import Detector
 
 
 class Propagator(object):

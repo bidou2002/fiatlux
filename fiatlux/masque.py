@@ -17,8 +17,8 @@ import scipy as sc
 import math
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from arrow3D import Arrow3D
-from polarizer import Polarizer
+from .arrow3D import Arrow3D
+from .polarizer import Polarizer
 import time
 
 
@@ -265,7 +265,7 @@ class Pyramid(Mask):
         if self._modulation is True:
             self._modulation_shape = kwargs.get('modulation_shape', None)
             self._modulation_path = kwargs.get('modulation_path', None)
-            if self._modulation_shape is 'circular':
+            if self._modulation_shape == 'circular':
                 self._modulation_radius = kwargs.get('modulation_radius',
                                                      field_size/4)
                 self._x_mod = (self._modulation_radius*np.cos(

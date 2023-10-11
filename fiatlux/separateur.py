@@ -16,9 +16,9 @@ import numpy as np
 import scipy as sc
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from arrow3D import Arrow3D
-from polarizer import Polarizer
-from mirror import Mirror
+from .arrow3D import Arrow3D
+from .polarizer import Polarizer
+from .mirror import Mirror
 
 
 class Separator(Mirror):

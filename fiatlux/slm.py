@@ -13,7 +13,7 @@ Created on Fri Jul 13 12:48:32 2018
 """
 import matplotlib.pyplot as plt
 import numpy as np
-from polarizer import Polarizer
+from .polarizer import Polarizer
 
 
 class SLM(Polarizer):
