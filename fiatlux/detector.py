@@ -20,7 +20,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from .arrow3D import Arrow3D
 from .polarizer import Polarizer
 from .mirror import Mirror
-from .masque import Mask
+from .mask import Mask
 
 
 class Detector(object):

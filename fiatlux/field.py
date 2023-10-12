@@ -19,12 +19,12 @@ from mpl_toolkits.mplot3d import Axes3D
 from .arrow3D import Arrow3D
 from .polarizer import Polarizer
 from .mirror import Mirror
-from .masque import *
-from .detecteur import Detector
+from .mask import *
+from .detector import Detector
 from .propagator import Propagator
-from .lentille import Lens
-from .pupille import Pupil
-from .separateur import Separator
+from .lens import Lens
+from .pupil import Pupil
+from .splitter import Separator
 from .slm import SLM
 
 

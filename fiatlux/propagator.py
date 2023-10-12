@@ -18,8 +18,8 @@ import scipy as sc
 import matplotlib.pyplot as plt
 from .polarizer import Polarizer
 from .mirror import Mirror
-from .masque import Mask
-from .detecteur import Detector
+from .mask import Mask
+from .detector import Detector
 
 
 class Propagator(object):
