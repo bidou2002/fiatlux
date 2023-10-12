@@ -22,37 +22,62 @@ from .polarizer import Polarizer
 from .mirror import Mirror
 from .mask import Mask
 
+plt.rcParams["image.cmap"] = "pink"
+
 
 class Detector(object):
+    """"""
 
-    '''####################################################################'''
-    '''####################### INIT AND OVERLOADING #######################'''
-    '''####################################################################'''
+    """####################################################################"""
+    """####################### INIT AND OVERLOADING #######################"""
+    """####################################################################"""
 
     # CONSTRUCTOR
     def __init__(self, field_size, **kwargs):
-
         # FIELD_SIZE IS A MANDATORY PARAMETER
         self._field_size = field_size
         # FIELD_SIZE IS A MANDATORY PARAMETER
-        self._complex_amplitude = np.zeros((self._field_size,
-                                            self._field_size, 1))
+        self._complex_amplitude = np.zeros((self._field_size, self._field_size, 1))
+        self.intensity = np.zeros((self._field_size, self._field_size, 1))
+
         self._display_id = id(self)
-        self._camera_name = kwargs.get('camera_name', 'Default camera')
-        self._display_intensity = kwargs.get('display_intensity', True)
+        self._camera_name = kwargs.get("camera_name", "Default camera")
+        self._display_intensity = kwargs.get("display_intensity", True)
+
+        # Camera noise integration
+        # Adapted from http://kmdouglass.github.io/posts/modeling-noise-for-image-simulations/
+
+        # Initialize random state
+        self._random_state_generator = np.random.RandomState(seed=31415)
+        # Quantum efficiency
+        self._quantum_efficiency = kwargs.get("quantum_efficiency", 1)
+        # Choose if noise is included or not
+        self._noise = kwargs.get("noise", False)
+
+        # Choose if readout noise is included or not
+        self._readout_noise_variance = kwargs.get("readout_noise_variance", 0)
+
+        # Choose if dark current is included or not
+        self._dark_current = kwargs.get("dark_current", 0)
+        # Choose if dark current is included or not
+        self._exposure_time = kwargs.get("exposure_time", 0)
+
+        #
+        self._offset = kwargs.get("offset", 100)
+        self._bitdepth = kwargs.get("bitdepth", 12)
+        self._sensitivity = kwargs.get("sensitivity", 5)
 
     # DESTRUCTOR
     def __del__(self):
-        del(self)
+        del self
 
     # REPRESENTER
     def __str__(self):
-        return ("* field_size : {} (px)\n"
-                .format(self._field_size))
+        return "* field_size : {} (px)\n".format(self._field_size)
 
-    '''####################################################################'''
-    '''####################### GET / SET DEFINITION #######################'''
-    '''####################################################################'''
+    """####################################################################"""
+    """####################### GET / SET DEFINITION #######################"""
+    """####################################################################"""
 
     # GET/SET FIELD SIZE
     def _get_field_size(self):
@@ -102,40 +127,84 @@ class Detector(object):
     def _del_display_intensity(self):
         print("Undeletable type property")
 
-    '''####################################################################'''
-    '''####################### FUNCTIONS DEFINITION #######################'''
-    '''####################################################################'''
+    """####################################################################"""
+    """####################### FUNCTIONS DEFINITION #######################"""
+    """####################################################################"""
 
     def object_ID(self):
         return [self]
 
+    def compute_intensity(self):
+        self.intensity = np.sum(np.abs((self._complex_amplitude) ** 2), axis=2)
+        if self._noise is True:
+            self.add_noise()
+
     def disp_intensity(self):
         fig = plt.figure(self._display_id)
-        if not ('inline' in matplotlib.get_backend()):
+        if not ("inline" in matplotlib.get_backend()):
             fig.canvas.set_window_title(self._camera_name)
-        plt.imshow(np.sum(np.abs((self._complex_amplitude)**2), axis=2))
-        plt.title('Intensity (in ???)')
+        self.compute_intensity()
+        plt.imshow(self.intensity)
+        plt.title("Intensity (in ADU)")
+        plt.colorbar()
         plt.show()
 
-    '''####################################################################'''
-    '''####################### PROPERTIES DEFINITION ######################'''
-    '''####################################################################'''
+    def add_noise(self):
+        photons = self._random_state_generator.poisson(
+            self.intensity/100000, size=self.intensity.shape
+        )
+        electrons = self._quantum_efficiency * photons
 
-    field_size = property(_get_field_size, _set_field_size, _del_field_size,
-                          "The 'field_size' property defines the field size "
-                          "(in px)")
+        # Add dark noise
+        variance_dark_noise = (
+            self._readout_noise_variance + self._dark_current * self._exposure_time
+        )
+        electrons_out = (
+            self._random_state_generator.normal(
+                scale=variance_dark_noise, size=electrons.shape
+            )
+            + electrons
+        )
 
-    complex_amplitude = property(_get_complex_amplitude,
-                                 _set_complex_amplitude,
-                                 _del_complex_amplitude,
-                                 "The 'amplitude' property defines the "
-                                 "amplitude of the wave (in ???)")
+        # Convert to ADU and add baseline
+        max_adu = int(2**self._bitdepth - 1)
+        adu = (electrons_out * self._sensitivity).astype(
+            int
+        )  # Convert to discrete numbers
+        adu += self._offset
+        # models pixel saturation
+        adu[adu > max_adu] = max_adu
 
-    camera_name = property(_get_camera_name, _set_camera_name,
-                           _del_camera_name,
-                          "The 'camera_name' property defines the camera name ")
+        self.intensity = adu
 
-    display_intensity= property(_get_display_intensity, _set_display_intensity,
-                           _del_display_intensity,
-                          "The 'display_intensity' property defines the"
-                          " display_intensity ")
+    """####################################################################"""
+    """####################### PROPERTIES DEFINITION ######################"""
+    """####################################################################"""
+
+    field_size = property(
+        _get_field_size,
+        _set_field_size,
+        _del_field_size,
+        "The 'field_size' property defines the field size " "(in px)",
+    )
+
+    complex_amplitude = property(
+        _get_complex_amplitude,
+        _set_complex_amplitude,
+        _del_complex_amplitude,
+        "The 'amplitude' property defines the " "amplitude of the wave (in ???)",
+    )
+
+    camera_name = property(
+        _get_camera_name,
+        _set_camera_name,
+        _del_camera_name,
+        "The 'camera_name' property defines the camera name ",
+    )
+
+    display_intensity = property(
+        _get_display_intensity,
+        _set_display_intensity,
+        _del_display_intensity,
+        "The 'display_intensity' property defines the" " display_intensity ",
+    )
