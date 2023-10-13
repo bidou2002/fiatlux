@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
  _______ _       _     _
-(_______|_)     | |   | |
- _____   _ _____| | __| |
+( ______|_)     | |   | |
+| |___   _ _____| | __| |
 |  ___) | | ___ | |/ _  |
 | |     | | ____| ( (_| |
 |_|     |_|_____)\_)____|
@@ -16,6 +16,7 @@ import scipy as sc
 import matplotlib.pyplot as plt
 import copy
 from mpl_toolkits.mplot3d import Axes3D
+import astropy.units as u
 from .arrow3D import Arrow3D
 from .polarizer import Polarizer
 from .mirror import Mirror
@@ -87,16 +88,21 @@ class Field(object):
         self._field_size = field_size
 
         # SCALE SET TO 1 PX/M BY DEFAULT
-        self._scale = kwargs.get("scale", 4e-5)
+        self._scale = None
 
         # WAVELENGTH SET TO 550 NM BY DEFAULT
         self._wavelength = kwargs.get("wavelength", 550e-9)
+        self._wavelength = self._wavelength * (u.meter)
 
         # DEFINE VERBOSE MODE
         self._verbose = kwargs.get("verbose", False)
 
-        # Irradiance in W/m2
+        # Define irradiance in [W/m2]
         self.irradiance = kwargs.get("irradiance", 1)
+        self.irradiance = self.irradiance * (u.watt / (u.meter) ** 2)
+
+        # Define flux in [W]. Flux is calculated only after passing through a pupil
+        self._flux = None
 
         # COMPLEX AMPLITUDE INITIALIZATION
         self._complex_amplitude = np.ones(
@@ -228,6 +234,8 @@ class Field(object):
             elif isinstance(vararg, Mask):
                 # IF VARARG IS A PUPIL
                 if isinstance(vararg, Pupil):
+                    self._flux = self.irradiance * vararg._surface
+                    self._scale = vararg.scale
                     if self._verbose is True:
                         print("Going through pupil")
                     for k in range(0, np.shape(self._complex_amplitude)[2]):
@@ -235,6 +243,9 @@ class Field(object):
                             self._complex_amplitude[:, :, k],
                             vararg.complex_transparency,
                         )
+                    self._complex_amplitude = (
+                        self.irradiance / self._scale**2
+                    )**.5 * self._complex_amplitude
 
                 # IF THE MASK IS A PYRAMID, A LOT HAS TO BE DONE TO PROCESS THE
                 # MODULATION
@@ -281,7 +292,7 @@ class Field(object):
             elif isinstance(vararg, Detector):
                 if self._verbose is True:
                     print("Arriving on detector")
-                vararg.complex_amplitude = self.irradiance * self._complex_amplitude
+                vararg.complex_amplitude = self._complex_amplitude
                 if vararg.display_intensity is True:
                     vararg.disp_intensity()
 
@@ -827,3 +838,9 @@ class Field(object):
         _del_optical_path,
         "The 'optical_path' property" "define the optical path undergone by the field",
     )
+
+
+class ExtendedField(Field):
+    def __init__(self, field_size):
+        self = Field(field_size)
+        print("initiated")
