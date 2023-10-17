@@ -1,4 +1,4 @@
-![Fiatlux logo](./fitalux/logos/fiatlux_logo.png)
+![Fiatlux logo](./fiatlux/logos/fiatlux_logo.png)
 # Fiatlux
 
 Fiatlux is a project that aims to offer a versatile environment for multiple optical simulation. The project details and specific goals can be found in the `PROJECT_GOALS.md` file.
