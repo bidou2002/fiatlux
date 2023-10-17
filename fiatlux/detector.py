@@ -17,6 +17,8 @@ import scipy as sc
 import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import astropy.units as u
+import astropy.constants as C
 from .arrow3D import Arrow3D
 from .polarizer import Polarizer
 from .mirror import Mirror
@@ -49,23 +51,36 @@ class Detector(object):
 
         # Initialize random state
         self._random_state_generator = np.random.RandomState(seed=31415)
-        # Quantum efficiency
-        self._quantum_efficiency = kwargs.get("quantum_efficiency", 1)
+
         # Choose if noise is included or not
         self._noise = kwargs.get("noise", False)
 
+        # Quantum efficiency
+        self._quantum_efficiency = kwargs.get("quantum_efficiency", 1)
+        self._quantum_efficiency = self._quantum_efficiency * (u.electron / u.photon)
+
         # Choose if readout noise is included or not
         self._readout_noise_variance = kwargs.get("readout_noise_variance", 0)
+        self._readout_noise_variance = self._readout_noise_variance * (u.electron)
 
         # Choose if dark current is included or not
         self._dark_current = kwargs.get("dark_current", 0)
+        self._dark_current = self._dark_current * (u.electron / u.second)
+
         # Choose if dark current is included or not
         self._exposure_time = kwargs.get("exposure_time", 0)
+        self._exposure_time = self._exposure_time * (u.second)
 
         #
         self._offset = kwargs.get("offset", 100)
+        self._offset = self._offset * (u.adu)
+
         self._bitdepth = kwargs.get("bitdepth", 12)
+
         self._sensitivity = kwargs.get("sensitivity", 5)
+        self._sensitivity = self._sensitivity * (u.adu / u.electron)
+
+        self._observing_wavelength = None
 
     # DESTRUCTOR
     def __del__(self):
@@ -135,7 +150,11 @@ class Detector(object):
         return [self]
 
     def compute_intensity(self):
-        self.intensity = np.sum(np.abs((self._complex_amplitude) ** 2), axis=2)
+        self.intensity = (
+            self._exposure_time
+            * np.sum(np.abs((self._complex_amplitude) ** 2), axis=2)
+            * (u.pixel**2)
+        )
         if self._noise is True:
             self.add_noise()
 
@@ -144,14 +163,18 @@ class Detector(object):
         if not ("inline" in matplotlib.get_backend()):
             fig.canvas.set_window_title(self._camera_name)
         self.compute_intensity()
-        plt.imshow(self.intensity)
-        plt.title("Intensity (in ADU)")
+        plt.imshow(self.intensity.value)
+        plt.title(f"Intensity (in {self.intensity.unit})")
         plt.colorbar()
         plt.show()
 
     def add_noise(self):
-        photons = self._random_state_generator.poisson(
-            self.intensity/100000, size=self.intensity.shape
+        photons = (
+            self._random_state_generator.poisson(
+                (self.intensity * (self._observing_wavelength / (C.h * C.c))).value,
+                size=self.intensity.shape,
+            )
+            * u.photon
         )
         electrons = self._quantum_efficiency * photons
 
@@ -161,21 +184,26 @@ class Detector(object):
         )
         electrons_out = (
             self._random_state_generator.normal(
-                scale=variance_dark_noise, size=electrons.shape
+                scale=variance_dark_noise.value, size=electrons.shape
             )
             + electrons
         )
 
         # Convert to ADU and add baseline
-        max_adu = int(2**self._bitdepth - 1)
+        max_adu = int(2**self._bitdepth - 1) * u.adu
         adu = (electrons_out * self._sensitivity).astype(
             int
         )  # Convert to discrete numbers
-        adu += self._offset
+        
+        print(adu.unit, max_adu.unit)
+
+        adu += self._offset.astype(int)
+
         # models pixel saturation
         adu[adu > max_adu] = max_adu
 
         self.intensity = adu
+        
 
     """####################################################################"""
     """####################### PROPERTIES DEFINITION ######################"""

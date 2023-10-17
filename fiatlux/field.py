@@ -243,9 +243,10 @@ class Field(object):
                             self._complex_amplitude[:, :, k],
                             vararg.complex_transparency,
                         )
+                    # Setting the irradiance right
                     self._complex_amplitude = (
                         self.irradiance / self._scale**2
-                    )**.5 * self._complex_amplitude
+                    ) ** 0.5 * self._complex_amplitude
 
                 # IF THE MASK IS A PYRAMID, A LOT HAS TO BE DONE TO PROCESS THE
                 # MODULATION
@@ -293,6 +294,7 @@ class Field(object):
                 if self._verbose is True:
                     print("Arriving on detector")
                 vararg.complex_amplitude = self._complex_amplitude
+                vararg._observing_wavelength = self.wavelength
                 if vararg.display_intensity is True:
                     vararg.disp_intensity()
 
@@ -368,9 +370,23 @@ class Field(object):
 
     # FIELD_1 & FIELD_2
     def __and__(self, vararg):
-        return np.sum(
-            np.abs(self.irradiance * self.complex_amplitude), axis=2
-        ) + np.sum(np.abs(vararg.irradiance * vararg.complex_amplitude), axis=2)
+        # Add scenes
+        if self._verbose is True:
+            print("Reflecting on tip-tilt mirror")
+        tmp = np.zeros(
+            (
+                self.field_size,
+                self.field_size,
+                np.shape(vararg._complex_transparency)[2],
+            ),
+            dtype=complex,
+        )
+        for k in range(0, np.shape(vararg._complex_transparency)[2]):
+            tmp[:, :, k] = np.multiply(
+                self._complex_amplitude[:, :, 0],
+                (vararg.complex_transparency[:, :, k]),
+            )
+        self._complex_amplitude = tmp
 
     # +FIELD
     def __pos__(self):
@@ -761,6 +777,9 @@ class Field(object):
 
     def object_ID(self):
         return [self]
+
+    def add_source(self, source_type, parameters):
+        return True
 
     """####################################################################"""
     """####################### PROPERTIES DEFINITION ######################"""
