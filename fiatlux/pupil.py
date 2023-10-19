@@ -50,7 +50,6 @@ class Pupil(Mask):
         self.resolution = self.resolution * (u.pixel)
 
         self.scale = self.resolution / self._aperture_size
-        print(self)
 
         # Prepare meshgrid to build the pupil
         x = np.linspace(
@@ -62,19 +61,23 @@ class Pupil(Mask):
         x_grid, y_grid = np.meshgrid(x, y)
         if self._aperture_shape == "circular":
             d = np.sqrt(x_grid**2 + y_grid**2) * (u.pixel)
-            self._complex_transparency[d < self.resolution / 2] = 1
             surface = np.pi * (self._aperture_size / 2) ** 2
+            self._complex_transparency[d < self.resolution / 2] = 1
+            self._complex_transparency /= (
+                np.sum(np.abs(self._complex_transparency) ** 2) ** 0.5
+            )
         elif self._aperture_shape == "square":
+            surface = self._aperture_size**2
             self._complex_transparency[
                 (np.abs(x_grid) * (u.pixel) < self.resolution / 2)
                 & (np.abs(y_grid) * (u.pixel) < self.resolution / 2)
             ] = 1
-            surface = self._aperture_size**2
+            self._complex_transparency /= (
+                np.sum(np.abs(self._complex_transparency) ** 2) ** 0.5
+            )
 
         # Define telescope surface
         self._surface = surface
-
-
 
     # REPRESENTERS
     def __str__(self):

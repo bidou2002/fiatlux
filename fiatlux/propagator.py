@@ -32,14 +32,14 @@ class Propagator(object):
     # CONSTRUCTOR
     def __init__(self, LCT_type, field, **kwargs):
         self._LCT_type = LCT_type
-        self._wavelength = field._wavelength
+        self._wavelength = field._source._wavelength
 
         # FAST FOURIER TRANSFORMATION
-        if self._LCT_type is "FFT" or self._LCT_type is "IFFT":
+        if self._LCT_type == "FFT" or self._LCT_type == "IFFT":
             # LCT
             self._LCT = [[0, 1], [-1, 0]]
         # FOURIER TRANSFORMATION
-        elif self._LCT_type is "FT":
+        elif self._LCT_type == "FT":
             self._focal_length = kwargs.get("focal_length", 300e-3)
             # LCT
             self._LCT = [
@@ -47,12 +47,12 @@ class Propagator(object):
                 [-1 / (self._wavelength * self._f), 0],
             ]
         # FRESNEL TRANSFORMATION
-        elif self._LCT_type is "FST":
+        elif self._LCT_type == "FST":
             self._z = kwargs.get("z", 300e-3)
             # LCT
             self._LCT = [[1, self._wavelength * self._z], [0, 1]]
         # FRACTIONNAL FOURIER TRANSFORMATION
-        elif self._LCT_type is "FRT":
+        elif self._LCT_type == "FRT":
             self._p = kwargs.get("p", 0)
             # LCT
             self._LCT = [
@@ -66,7 +66,7 @@ class Propagator(object):
                 ],
             ]
         #
-        elif self._LCT_type is "CMT":
+        elif self._LCT_type == "CMT":
             self._focal_length = kwargs.get("focal_length", 300e-3)
             # LCT
             self._LCT = [[1, 0], [-1 / (self._wavelength * self._f), 1]]
@@ -90,12 +90,11 @@ class Propagator(object):
     """####################################################################"""
 
     def propagate(self, field):
-        unit = field.complex_amplitude.unit
-        if self._LCT_type is "FFT":
+        if self._LCT_type == "FFT":
             FFTCube = np.zeros(
                 (
-                    field.field_size,
-                    field.field_size,
+                    int(field.field_size.value),
+                    int(field.field_size.value),
                     np.shape(field.complex_amplitude)[2],
                 ),
                 dtype=complex,
@@ -105,14 +104,14 @@ class Propagator(object):
                     np.fft.fftshift(
                         np.fft.fft2(np.fft.fftshift(field.complex_amplitude[:, :, k]))
                     )
-                    / field.field_size
+                    / field.field_size.value
                 )
-            return FFTCube * unit
-        elif self._LCT_type is "IFFT":
+            return FFTCube
+        elif self._LCT_type == "IFFT":
             IFFTCube = np.zeros(
                 (
-                    field.field_size,
-                    field.field_size,
+                    int(field.field_size.value),
+                    int(field.field_size.value),
                     np.shape(field.complex_amplitude)[2],
                 ),
                 dtype=complex,
@@ -122,14 +121,14 @@ class Propagator(object):
                     np.fft.fftshift(
                         np.fft.fft2(np.fft.fftshift(field.complex_amplitude[:, :, k]))
                     )
-                    / field.field_size
+                    / field.field_size.value
                 )
-            return IFFTCube * unit
+            return IFFTCube
         # THE THING TO IMPLEMENT NOW !
-        elif self._LCT_type is "FT":
+        elif self._LCT_type == "FT":
             return 0
         # FST
-        elif self._LCT_type is "FST":
+        elif self._LCT_type == "FST":
             FSTCube = np.zeros(
                 (
                     field.field_size,
@@ -204,7 +203,7 @@ class Propagator(object):
                         )
                     )
             return FSTCube
-        elif self._LCT_type is "FRT":
+        elif self._LCT_type == "FRT":
             return 0
 
     def object_ID(self):

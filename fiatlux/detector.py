@@ -82,13 +82,25 @@ class Detector(object):
 
         self._observing_wavelength = None
 
+        self.number_photon = 0
+
     # DESTRUCTOR
     def __del__(self):
         del self
 
     # REPRESENTER
     def __str__(self):
-        return "* field_size : {} (px)\n".format(self._field_size)
+        string = f"""<detector>
+  * field_size : {self._field_size}
+  * camera_name : {self._camera_name}\n"""
+        string_noise = ""
+        if self._noise == True:
+            string_noise += f"""  * readout_noise_variance : {self._readout_noise_variance}
+  * dark_current : {self._dark_current}
+  * offset : {self._offset}
+  * bitdepth : {self._bitdepth}
+  * sensitivity : {self._sensitivity}"""
+        return string + string_noise
 
     """####################################################################"""
     """####################### GET / SET DEFINITION #######################"""
@@ -150,11 +162,7 @@ class Detector(object):
         return [self]
 
     def compute_intensity(self):
-        self.intensity = (
-            self._exposure_time
-            * np.sum(np.abs((self._complex_amplitude) ** 2), axis=2)
-            * (u.pixel**2)
-        )
+        self.intensity = np.sum(np.abs((self._complex_amplitude) ** 2), axis=2) * self.number_photon
         if self._noise is True:
             self.add_noise()
 
@@ -171,7 +179,7 @@ class Detector(object):
     def add_noise(self):
         photons = (
             self._random_state_generator.poisson(
-                (self.intensity * (self._observing_wavelength / (C.h * C.c))).value,
+                self.intensity.value,
                 size=self.intensity.shape,
             )
             * u.photon
@@ -182,10 +190,11 @@ class Detector(object):
         variance_dark_noise = (
             self._readout_noise_variance + self._dark_current * self._exposure_time
         )
+        print(electrons,variance_dark_noise)
         electrons_out = (
             self._random_state_generator.normal(
                 scale=variance_dark_noise.value, size=electrons.shape
-            )
+            ) * u.electron
             + electrons
         )
 
@@ -194,7 +203,7 @@ class Detector(object):
         adu = (electrons_out * self._sensitivity).astype(
             int
         )  # Convert to discrete numbers
-        
+
         print(adu.unit, max_adu.unit)
 
         adu += self._offset.astype(int)
@@ -203,7 +212,6 @@ class Detector(object):
         adu[adu > max_adu] = max_adu
 
         self.intensity = adu
-        
 
     """####################################################################"""
     """####################### PROPERTIES DEFINITION ######################"""

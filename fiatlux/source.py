@@ -18,35 +18,47 @@ import matplotlib.pyplot as plt
 import astropy.units as u
 
 from .field import Field
+from .spectrum import Spectrum
 
 
-class Source(Field):
+class Source:
+    """The Source class define the physical properties of a source."""
+
     # Constructor
-    def __init__(self, field_size, **kwargs):
+    def __init__(self, **kwargs):
+        # Name of the source
         self.name = kwargs.get("name", "unamed_source")
 
-        Field.__init__(self, field_size=field_size)
+        # Define type of field - default is plane wave
+        self.type = kwargs.get("type", "plane_wave")
 
-        self._create_plane_wave(incidence_angles=[0, 0])
+        # Define type-specific arguments
+        match self.type:
+            case "plane_wave":
+                self.type_arguments = {
+                    "incidence_angles": kwargs.get("incidence_angles", [0.0, 0.0]),
+                }
+            case "gaussian_wave":
+                self.type_arguments = {
+                    "center": kwargs.get("center", [0.0, 0.0]),
+                    "variance": kwargs.get("variance", 1.0),
+                }
+            case "point_source":
+                self.type_arguments = {
+                    "center": kwargs.get("center", [0.0, 0.0])
+                }
 
-    def _create_point_source(self):
-        pass
+        # Magnitude of the source
+        self.magnitude = kwargs.get("magnitude", 0)
 
-    def _create_plane_wave(self, incidence_angles):
-        self._incidence_angles = incidence_angles
-        x = np.linspace(
-            -self._field_size / 2, self._field_size / 2 - 1, self._field_size
-        )
-        y = np.linspace(
-            -self._field_size / 2, self._field_size / 2 - 1, self._field_size
-        )
-        x_grid, y_grid = np.meshgrid(x, y)
-        self._complex_amplitude[:, :, 0] = np.exp(
-            1j
-            * (self._incidence_angles[0] * x_grid + self._incidence_angles[1] * y_grid)
-        )
+        # Optical band of observation
+        self.optical_band = kwargs.get("optical_band", "V")
 
-    def _create_extended_object(
-        self,
-    ):
-        pass
+        # Parameters corresponding to the spectrum
+        lambda_eff, delta_lambda, f_0 = Spectrum.photometry(self.optical_band)
+
+        # Effective wavelength
+        self._wavelength = lambda_eff
+
+        # Photon flux at the pupil in [photon / m2 / s]
+        self.photon_flux = f_0 * 10 ** (-self.magnitude / 2.5)

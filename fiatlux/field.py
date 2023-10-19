@@ -83,62 +83,29 @@ class Field(object):
     """####################################################################"""
 
     # CONSTRUCTOR
-    def __init__(self, field_size, **kwargs):
-        # FIELD_SIZE IS A MANDATORY PARAMETER
-        self._field_size = field_size
+    def __init__(self, source, field_size, **kwargs):
+        # Field emanates from a source
+        self._source = source
 
-        # SCALE SET TO 1 PX/M BY DEFAULT
+        # field_size is a mandatory parameter as it defines the size of the matrix used to carry informations about complex amplitude of the field
+        self._field_size = field_size * u.pixel
+
+        # Scale is define when going through the pupil
         self._scale = None
-
-        # WAVELENGTH SET TO 550 NM BY DEFAULT
-        self._wavelength = kwargs.get("wavelength", 550e-9)
-        self._wavelength = self._wavelength * (u.meter)
 
         # DEFINE VERBOSE MODE
         self._verbose = kwargs.get("verbose", False)
 
-        # Define irradiance in [W/m2]
-        self.irradiance = kwargs.get("irradiance", 1)
-        self.irradiance = self.irradiance * (u.watt / (u.meter) ** 2)
-
-        # Define flux in [W]. Flux is calculated only after passing through a pupil
-        self._flux = None
-
-        # COMPLEX AMPLITUDE INITIALIZATION
+        # Initialization of the complex amplitude - necessary ??
         self._complex_amplitude = np.ones(
-            (self._field_size, self.field_size, 1), dtype=complex
+            (int(self._field_size.value), int(self._field_size.value), 1), dtype=complex
         )
-        # FIELD MAP BUILDING
-        x = np.linspace(
-            -self._field_size / 2, self._field_size / 2 - 1, self._field_size
-        )
-        y = np.linspace(
-            -self._field_size / 2, self._field_size / 2 - 1, self._field_size
-        )
-        x_grid, y_grid = np.meshgrid(x, y)
-        self._field_map = kwargs.get("field_map", None)
-        # PLAN WAVE
-        if self._field_map == "plan_wave":
-            self._incidence_angles = kwargs.get("incidence_angles", [0, 0])
-            self._complex_amplitude[:, :, 0] = np.exp(
-                1j
-                * (
-                    self._incidence_angles[0] * x_grid
-                    + self._incidence_angles[1] * y_grid
-                )
-            )
-        # GAUSSIAN
-        elif self._field_map == "gaussian":
-            self._center = kwargs.get("gaussian_center", [0, 0])
-            self._variance = kwargs.get("gaussian_variance", 1)
-            self._complex_amplitude[:, :, 0] = np.exp(
-                -((x_grid - self._center[0]) ** 2 + (y_grid - self._center[1]) ** 2)
-                / (2 * self._variance)
-            )
-        else:
-            self._complex_amplitude[:, :, 0] = np.ones(
-                (self._field_size, self._field_size)
-            )
+
+        match self._source.type:
+            case "plane_wave":
+                self.build_plane_wave()
+            case "gaussian_wave":
+                self.build_gaussian_wave()
 
         # DEFINITION OF THE STOKES_PARAMETER OR ITS EQUIVALENT IN SPHERICAL
         # COORDINATES SPHERICAL_STOKES_PARAMETERS
@@ -183,10 +150,10 @@ class Field(object):
     def __str__(self):
         return (
             "<field>\n"
-            "  * field_size : {} (px)\n"
-            "  * scale : {} (px/m)\n"
-            "  * wavelength : {} (m)".format(
-                self._field_size, self._scale, self._wavelength
+            "  * field_size : {}\n"
+            "  * scale : {}\n"
+            "  * wavelength : {}".format(
+                self._field_size, self._scale, self._source._wavelength
             )
         )
 
@@ -234,8 +201,9 @@ class Field(object):
             elif isinstance(vararg, Mask):
                 # IF VARARG IS A PUPIL
                 if isinstance(vararg, Pupil):
-                    self._flux = self.irradiance * vararg._surface
-                    self._scale = vararg.scale
+                    # self._flux = self.irradiance * vararg._surface
+                    # self._scale = vararg.scale
+                    self._pupil = vararg
                     if self._verbose is True:
                         print("Going through pupil")
                     for k in range(0, np.shape(self._complex_amplitude)[2]):
@@ -243,10 +211,10 @@ class Field(object):
                             self._complex_amplitude[:, :, k],
                             vararg.complex_transparency,
                         )
-                    # Setting the irradiance right
-                    self._complex_amplitude = (
-                        self.irradiance / self._scale**2
-                    ) ** 0.5 * self._complex_amplitude
+                    # # Setting the irradiance right
+                    # self._complex_amplitude = (
+                    #     self.irradiance / self._scale**2
+                    # ) ** 0.5 * self._complex_amplitude
 
                 # IF THE MASK IS A PYRAMID, A LOT HAS TO BE DONE TO PROCESS THE
                 # MODULATION
@@ -293,8 +261,9 @@ class Field(object):
             elif isinstance(vararg, Detector):
                 if self._verbose is True:
                     print("Arriving on detector")
+                vararg.number_photon = self._pupil._surface * vararg._exposure_time * self._source.photon_flux
                 vararg.complex_amplitude = self._complex_amplitude
-                vararg._observing_wavelength = self.wavelength
+                # vararg._observing_wavelength = self.wavelength
                 if vararg.display_intensity is True:
                     vararg.disp_intensity()
 
@@ -402,7 +371,7 @@ class Field(object):
     def __matmul__(self, vararg):
         # CREATE A NEW FIELD INSTANCE (FIELD = SELF MAKES FIELD==SELF RETURNING
         # TRUE MAKING IT THE SAME INSTANCE? I.E. NOT WHAT WE NEED)
-        field = Field(self._field_size, scale=self._scale, wavelength=self._wavelength)
+        field = Field(int(self._field_size.value), scale=self._scale, wavelength=self._wavelength)
         # REASIGN THE FIELD MAP PARAMETERS TO FIELD
         if self._field_map == "plan_wave":
             field._incidence_angles = self._incidence_angles
@@ -781,6 +750,30 @@ class Field(object):
     def add_source(self, source_type, parameters):
         return True
 
+    def build_meshgrid(self):
+        """Build a meshgrid (x and y grid) for the field."""
+        x = np.linspace(
+            -int(self._field_size.value) / 2, int(self._field_size.value) / 2 - 1, int(self._field_size.value)
+        )
+        y = np.linspace(
+            -int(self._field_size.value) / 2, int(self._field_size.value) / 2 - 1, int(self._field_size.value)
+        )
+        return np.meshgrid(x, y)
+
+    def build_plane_wave(self, incidence_angles=[0, 0]):
+        """Build a plane wave with incidence_angles. π rad. <-> 1 px"""
+        x_grid, y_grid = self.build_meshgrid()
+        self._complex_amplitude[:, :, 0] = np.exp(
+            1j * (incidence_angles[0] * x_grid + incidence_angles[1] * y_grid)
+        )
+
+    def build_gaussian_wave(self, center=[0.0, 0.0], variance=1.0):
+        """Build a gaussian wave with parameters center and variance."""
+        x_grid, y_grid = self.build_meshgrid()
+        self._complex_amplitude[:, :, 0] = np.exp(
+            -((x_grid - center[0]) ** 2 + (y_grid - center[1]) ** 2) / (2 * variance)
+        )
+
     """####################################################################"""
     """####################### PROPERTIES DEFINITION ######################"""
     """####################################################################"""
@@ -857,9 +850,3 @@ class Field(object):
         _del_optical_path,
         "The 'optical_path' property" "define the optical path undergone by the field",
     )
-
-
-class ExtendedField(Field):
-    def __init__(self, field_size):
-        self = Field(field_size)
-        print("initiated")
