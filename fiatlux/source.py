@@ -47,6 +47,10 @@ class Source:
                 self.type_arguments = {
                     "center": kwargs.get("center", [0.0, 0.0])
                 }
+            case "extended_object":
+                self.type_arguments = {
+                    "incidence_angles_list": kwargs.get("incidence_angles_list", [[0.0, 0.0]])
+                }
 
         # Magnitude of the source
         self.magnitude = kwargs.get("magnitude", 0)

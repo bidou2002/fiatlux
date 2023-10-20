@@ -106,6 +106,10 @@ class Field(object):
                 self.build_plane_wave()
             case "gaussian_wave":
                 self.build_gaussian_wave()
+            case "extended_object":
+                self.build_extended_object(
+                    self._source.type_arguments["incidence_angles_list"]
+                )
 
         # DEFINITION OF THE STOKES_PARAMETER OR ITS EQUIVALENT IN SPHERICAL
         # COORDINATES SPHERICAL_STOKES_PARAMETERS
@@ -261,7 +265,11 @@ class Field(object):
             elif isinstance(vararg, Detector):
                 if self._verbose is True:
                     print("Arriving on detector")
-                vararg.number_photon = self._pupil._surface * vararg._exposure_time * self._source.photon_flux
+                vararg.number_photon = (
+                    self._pupil._surface
+                    * vararg._exposure_time / (np.shape(self._complex_amplitude)[2]) # ensure the right amount of photon on the whole extended object
+                    * self._source.photon_flux
+                )
                 vararg.complex_amplitude = self._complex_amplitude
                 if vararg._noise == False:
                     vararg.compute_intensity()
@@ -375,7 +383,9 @@ class Field(object):
     def __matmul__(self, vararg):
         # CREATE A NEW FIELD INSTANCE (FIELD = SELF MAKES FIELD==SELF RETURNING
         # TRUE MAKING IT THE SAME INSTANCE? I.E. NOT WHAT WE NEED)
-        field = Field(int(self._field_size.value), scale=self._scale, wavelength=self._wavelength)
+        field = Field(
+            int(self._field_size.value), scale=self._scale, wavelength=self._wavelength
+        )
         # REASIGN THE FIELD MAP PARAMETERS TO FIELD
         if self._field_map == "plan_wave":
             field._incidence_angles = self._incidence_angles
@@ -757,14 +767,18 @@ class Field(object):
     def build_meshgrid(self):
         """Build a meshgrid (x and y grid) for the field."""
         x = np.linspace(
-            -int(self._field_size.value) / 2, int(self._field_size.value) / 2 - 1, int(self._field_size.value)
+            -int(self._field_size.value) / 2,
+            int(self._field_size.value) / 2 - 1,
+            int(self._field_size.value),
         )
         y = np.linspace(
-            -int(self._field_size.value) / 2, int(self._field_size.value) / 2 - 1, int(self._field_size.value)
+            -int(self._field_size.value) / 2,
+            int(self._field_size.value) / 2 - 1,
+            int(self._field_size.value),
         )
         return np.meshgrid(x, y)
 
-    def build_plane_wave(self, incidence_angles=[0, 0]):
+    def build_plane_wave(self, incidence_angles=[0.0, 0.0]):
         """Build a plane wave with incidence_angles. π rad. <-> 1 px"""
         x_grid, y_grid = self.build_meshgrid()
         self._complex_amplitude[:, :, 0] = np.exp(
@@ -777,6 +791,23 @@ class Field(object):
         self._complex_amplitude[:, :, 0] = np.exp(
             -((x_grid - center[0]) ** 2 + (y_grid - center[1]) ** 2) / (2 * variance)
         )
+
+    def build_extended_object(self, incidence_angles_list=[[0.0, 0.0]]):
+        """Build a gaussian wave with parameters center and variance."""
+        x_grid, y_grid = self.build_meshgrid()
+        tmp = np.zeros(
+            (
+                int(self.field_size.value),
+                int(self.field_size.value),
+                len(incidence_angles_list),
+            ),
+            dtype=complex,
+        )
+        for k, incidence_angles in enumerate(incidence_angles_list):
+            tmp[:, :, k] = np.exp(
+                1j * (incidence_angles[0] * x_grid + incidence_angles[1] * y_grid)
+            )
+        self._complex_amplitude = tmp
 
     """####################################################################"""
     """####################### PROPERTIES DEFINITION ######################"""
