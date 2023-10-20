@@ -22,7 +22,7 @@ import astropy.units as u
 from .field import Field
 
 
-class Spectrum:
+class Spectrum: 
     # Photometry from OOPAO
     def photometry(arg):
         # photometry object [wavelength, bandwidth, zeroPoint]
@@ -66,7 +66,7 @@ class Spectrum:
                 wavelength, delta_lambda, f0 = getattr(phot, arg)
                 wavelength *= u.meter
                 delta_lambda *= u.meter
-                f0 *= u.photon / (u.meter**2 * u.second)
+                f0 *= (1/368) * u.photon / (u.meter**2 * u.second)
                 return [wavelength, delta_lambda, f0]
             else:
                 print("Error: Wrong name for the photometry object")

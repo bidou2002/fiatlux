@@ -41,6 +41,7 @@ class Detector(object):
         # FIELD_SIZE IS A MANDATORY PARAMETER
         self._complex_amplitude = np.zeros((self._field_size, self._field_size, 1))
         self.intensity = np.zeros((self._field_size, self._field_size, 1))
+        self.intensity_noise = np.zeros((self._field_size, self._field_size, 1))
 
         self._display_id = id(self)
         self._camera_name = kwargs.get("camera_name", "Default camera")
@@ -162,9 +163,13 @@ class Detector(object):
         return [self]
 
     def compute_intensity(self):
-        self.intensity = np.sum(np.abs((self._complex_amplitude) ** 2), axis=2) * self.number_photon
-        if self._noise is True:
-            self.add_noise()
+        self.intensity = (
+            np.sum(np.abs((self._complex_amplitude) ** 2), axis=2) * self.number_photon
+        )
+
+    def compute_intensity_noise(self):
+        self.compute_intensity()
+        self.add_noise()
 
     def disp_intensity(self):
         fig = plt.figure(self._display_id)
@@ -173,6 +178,16 @@ class Detector(object):
         self.compute_intensity()
         plt.imshow(self.intensity.value)
         plt.title(f"Intensity (in {self.intensity.unit})")
+        plt.colorbar()
+        plt.show()
+
+    def disp_intensity_noise(self):
+        fig = plt.figure(self._display_id)
+        if not ("inline" in matplotlib.get_backend()):
+            fig.canvas.set_window_title(self._camera_name)
+        self.compute_intensity_noise()
+        plt.imshow(self.intensity_noise.value)
+        plt.title(f"Intensity (in {self.intensity_noise.unit})")
         plt.colorbar()
         plt.show()
 
@@ -190,11 +205,12 @@ class Detector(object):
         variance_dark_noise = (
             self._readout_noise_variance + self._dark_current * self._exposure_time
         )
-        print(electrons,variance_dark_noise)
+
         electrons_out = (
             self._random_state_generator.normal(
                 scale=variance_dark_noise.value, size=electrons.shape
-            ) * u.electron
+            )
+            * u.electron
             + electrons
         )
 
@@ -204,14 +220,12 @@ class Detector(object):
             int
         )  # Convert to discrete numbers
 
-        print(adu.unit, max_adu.unit)
-
         adu += self._offset.astype(int)
 
         # models pixel saturation
         adu[adu > max_adu] = max_adu
 
-        self.intensity = adu
+        self.intensity_noise = adu
 
     """####################################################################"""
     """####################### PROPERTIES DEFINITION ######################"""

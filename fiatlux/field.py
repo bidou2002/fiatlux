@@ -263,6 +263,10 @@ class Field(object):
                     print("Arriving on detector")
                 vararg.number_photon = self._pupil._surface * vararg._exposure_time * self._source.photon_flux
                 vararg.complex_amplitude = self._complex_amplitude
+                if vararg._noise == False:
+                    vararg.compute_intensity()
+                else:
+                    vararg.compute_intensity_noise()
                 # vararg._observing_wavelength = self.wavelength
                 if vararg.display_intensity is True:
                     vararg.disp_intensity()
