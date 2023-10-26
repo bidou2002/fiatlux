@@ -30,7 +30,7 @@ class PointSource:
         complex_amplitude = np.exp(
             1j * (self.incidence_angles[0] * x_grid + self.incidence_angles[1] * y_grid)
         )
-        return ComplexAmplitude(_complex_amplitude=complex_amplitude, _dimension=0)
+        return ComplexAmplitude(_complex_amplitude=complex_amplitude)
 
 
 @dataclass(kw_only=True)
@@ -51,4 +51,4 @@ class ExtendedSource:
                 1j * (incidence_angles[0] * x_grid + incidence_angles[1] * y_grid)
             )
 
-        return ComplexAmplitude(_complex_amplitude=complex_amplitude, _dimension=1)
+        return ComplexAmplitude(_complex_amplitude=complex_amplitude)

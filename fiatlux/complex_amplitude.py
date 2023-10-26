@@ -8,7 +8,6 @@ import numpy as np
 @dataclass
 class ComplexAmplitude:
     _complex_amplitude: np.ndarray
-    _dimension: int
 
     def compute_amplitude(self):
         return np.abs(self._complex_amplitude)
