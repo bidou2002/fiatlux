@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from abc import abstractmethod
 from dataclasses import dataclass
 from enum import auto, Enum
@@ -7,6 +9,7 @@ import numpy as np
 from .source_dev import Source, PointSource, ExtendedSource
 from .propagators import Propagator
 from .complex_amplitude import ComplexAmplitude
+from .mask import Mask
 
 
 @dataclass
@@ -21,14 +24,18 @@ class Field:
         for source in self.source_list:
             self._complex_amplitude_list += [source.compute_field(self.field_size)]
 
-    def __mul__(self, vararg):
-        match vararg():
-            case Propagator():
-                self.propagate(vararg)
-            case Mask():
-                pass
+        self._optical_path = []
 
-    def propagate(self, propagator: Propagator):
+    # add vararg on optical path
+    def __mul__(self, vararg: Mask | Propagator) -> Field:
+        self._optical_path += [vararg]
+        return self
+    
+    def resolve(self) -> None:
+        # used a the end of the building process to resolve and propagate along each module in the optical_path
+        pass
+
+    def propagate(self, propagator: Propagator) -> None:
         tmp_list = []
         for complex_amplitude in self._complex_amplitude_list:
             tmp_list += [
@@ -36,7 +43,7 @@ class Field:
             ]
         self._complex_amplitude_list = tmp_list
 
-    def compute_intensity(self):
+    def compute_intensity(self) -> np.ndarray:
         intensity = np.zeros((self.field_size, self.field_size))
         for complex_amplitude in self._complex_amplitude_list:
             n_dim = complex_amplitude._complex_amplitude.ndim
