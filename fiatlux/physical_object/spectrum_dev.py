@@ -8,12 +8,35 @@ import astropy.constants as C
 import astropy.units as u
 
 
+@dataclass
+class SpectralBandCharacteristics:
+    lambda_eff: float
+    delta_lambda: float
+    f_0: float
+
+
 class SpectralBand(Enum):
     # spectral bands with caracteristics λeff, Δλ and f_0
-    U = [0.360e-6, 0.070e-6, 2.0e12]
-    B = [0.500e-6, 0.090e-6, 3.3e12]
-    V = [0.550e-6, 0.090e-6, 3.3e12]
-    R = [0.640e-6, 0.150e-6, 4.0e12]
+    U = SpectralBandCharacteristics(
+        lambda_eff=360e-9 * u.meter,
+        delta_lambda=70e-9 * u.meter,
+        f_0=2.0e12 * u.photon / u.meter**2 / u.second,
+    )
+    B = SpectralBandCharacteristics(
+        lambda_eff=500e-9 * u.meter,
+        delta_lambda=90e-9 * u.meter,
+        f_0=3.3e12 * u.photon / u.meter**2 / u.second,
+    )
+    V = SpectralBandCharacteristics(
+        lambda_eff=550e-9 * u.meter,
+        delta_lambda=90e-9 * u.meter,
+        f_0=3.3e12 * u.photon / u.meter**2 / u.second,
+    )
+    R = SpectralBandCharacteristics(
+        lambda_eff=640e-9 * u.meter,
+        delta_lambda=150e-9 * u.meter,
+        f_0=4.0e12 * u.photon / u.meter**2 / u.second,
+    )
 
 
 class SpectralFilter(Enum):
@@ -21,9 +44,9 @@ class SpectralFilter(Enum):
     B = [360e-9, 550e-9]
 
 
-@dataclass
 class Spectrum:
-    _photon_number: float = 0.0
+    def __init__(self):
+        self.photon_number: float = 0.0
 
     # def __post_init__(self):
     #     # need typing ???
@@ -34,7 +57,7 @@ class Spectrum:
         pass
 
 
-@dataclass(kw_only=True)
+@dataclass
 class Monochromatic(Spectrum):
     """
     A monochromatic radiation at wavelength λ with irradiance I
@@ -43,14 +66,19 @@ class Monochromatic(Spectrum):
     wavelength: float
     irradiance: float
 
+    def __post_init__(self):
+        self.wavelength *= u.meter
+        self.irradiance *= u.watt / u.meter**2
+        self.photon_number = self.compute_photon_flux()
+
     def compute_photon_flux(self):
-        print(self._photon_number)
         c = C.c  # speed of light
         h = C.h  # Plank's constant
-        self._photon_number = self.irradiance / ((h * c) / self.wavelength)
+        photon_energy = ((h * c) / self.wavelength) * 1 / u.photon
+        return self.irradiance / photon_energy
 
 
-@dataclass(kw_only=True)
+@dataclass
 class BlackBody(Spectrum):
     """
     A black body at temperature T.
@@ -59,7 +87,7 @@ class BlackBody(Spectrum):
     temperature: float
     filter: SpectralFilter
 
-    def compute_photon_flux(self, filter: SpectralFilter):
+    def compute_photon_flux(self):
         # define constants
         c = C.c  # speed of light
         h = C.h  # Plank's constant
@@ -78,7 +106,7 @@ class BlackBody(Spectrum):
             print(I)
 
 
-@dataclass(kw_only=True)
+@dataclass
 class Photometric(Spectrum):
     """
     A spectrally filtered radiation with with magnitude m and spectral band B.
@@ -87,6 +115,9 @@ class Photometric(Spectrum):
     magnitude: float
     spectral_band: SpectralBand
 
+    def __post_init__(self):
+        self.photon_number = self.compute_photon_flux()
+
     def compute_photon_flux(self):
-        lambda_eff, delta_lambda, f_0 = self.spectral_band.value
+        f_0 = self.spectral_band.value.f_0
         return (f_0 / 368) * 10 ** (-self.magnitude / 2.5)

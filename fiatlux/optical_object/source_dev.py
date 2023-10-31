@@ -4,8 +4,8 @@ from enum import auto, Enum
 
 import numpy as np
 
-from .spectrum_dev import Spectrum, SpectralFilter, Monochromatic
-from .complex_amplitude import ComplexAmplitude
+from ..physical_object.spectrum_dev import Spectrum, SpectralFilter, Monochromatic
+from ..physical_object.complex_amplitude import ComplexAmplitude
 
 
 @dataclass
@@ -13,31 +13,36 @@ class Source:
     spectrum: Spectrum = Monochromatic(wavelength=550e-9, irradiance=1)
 
     @abstractmethod
-    def compute_field(self, **kwargs) -> np.ndarray:
+    def compute_field(self, field_size: int) -> ComplexAmplitude:
         pass
 
 
 @dataclass(kw_only=True)
-class PointSource:
-    incidence_angles: [float, float]
+class PointSource(Source):
+    incidence_angles: list[float]
 
-    def compute_field(self, field_size) -> np.ndarray:
-        print("cul")
+    def compute_field(self, field_size: int) -> ComplexAmplitude:
         x_grid, y_grid = np.meshgrid(
             np.linspace(start=0, stop=field_size, num=field_size),
             np.linspace(start=0, stop=field_size, num=field_size),
         )
+        complex_amplitude = np.zeros(
+            shape=(field_size, field_size, 0),
+            dtype=complex,
+        )
         complex_amplitude = np.exp(
             1j * (self.incidence_angles[0] * x_grid + self.incidence_angles[1] * y_grid)
         )
-        return ComplexAmplitude(_complex_amplitude=complex_amplitude)
+        return ComplexAmplitude(
+            complex_amplitude=complex_amplitude, photon=self.spectrum.photon_number
+        )
 
 
 @dataclass(kw_only=True)
-class ExtendedSource:
-    incidence_angles_list: list([float, float])
+class ExtendedSource(Source):
+    incidence_angles_list: list[list[float]]
 
-    def compute_field(self, field_size) -> np.ndarray:
+    def compute_field(self, field_size: int) -> ComplexAmplitude:
         x_grid, y_grid = np.meshgrid(
             np.linspace(start=0, stop=field_size, num=field_size),
             np.linspace(start=0, stop=field_size, num=field_size),
@@ -51,4 +56,6 @@ class ExtendedSource:
                 1j * (incidence_angles[0] * x_grid + incidence_angles[1] * y_grid)
             )
 
-        return ComplexAmplitude(_complex_amplitude=complex_amplitude)
+        return ComplexAmplitude(
+            complex_amplitude=complex_amplitude, photon=self.spectrum.photon_number
+        )

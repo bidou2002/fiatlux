@@ -1,16 +1,17 @@
 from abc import abstractmethod
 from dataclasses import dataclass
 from enum import auto, Enum
+from fiatlux.optical_object import OpticalObject
 
 import numpy as np
 import astropy.units as u
 
-from .spectrum_dev import Spectrum, SpectralFilter, Monochromatic
-from .complex_amplitude import ComplexAmplitude
+from ..physical_object.spectrum_dev import Spectrum, SpectralFilter, Monochromatic
+from ..physical_object.complex_amplitude import ComplexAmplitude
 
 
 @dataclass
-class Detector:
+class Detector(OpticalObject):
     quantum_efficiency: float = 1
     photon_noise: bool = False
     readout_noise_variance: float = 0
@@ -22,9 +23,18 @@ class Detector:
     random_state_generator: np.random.RandomState = np.random.RandomState(seed=31415)
     name: str = "default_camera"
 
+    def compute_transformation(
+        self,
+        complex_amplitudes: list[ComplexAmplitude],
+    ) -> list[ComplexAmplitude]:
+        raise NotImplementedError
+        for complex_amplitude in complex_amplitudes:
+            pass
+
     def compute_intensity(
-        self, complex_amplitude_list: [ComplexAmplitude], photon_per_second: float
+        self, complex_amplitude_list: list[ComplexAmplitude], photon_per_second: float
     ) -> np.ndarray:
+        raise NotImplementedError
         # initialize intensity
         intensity = np.zeros(complex_amplitude_list[0].shape, dtype=float)
         for complex_amplitude in complex_amplitude_list:
@@ -44,7 +54,7 @@ class Detector:
         if self.photon_noise == True:
             photons = (
                 self.random_state_generator.poisson(
-                    intensity,
+                    intensity.astype(float),
                     size=intensity.shape,
                 )
                 * u.photon
@@ -55,7 +65,7 @@ class Detector:
         electrons = self.quantum_efficiency * photons
 
         # Add dark noise
-        variance_dark_noise += (
+        variance_dark_noise = (
             self.readout_noise_variance + self.dark_current * self.exposure_time
         )
 
@@ -68,12 +78,12 @@ class Detector:
         )
 
         # Convert to ADU and add baseline
-        max_adu = int(2**self._bitdepth - 1) * u.adu
-        adu = (electrons_out * self._sensitivity).astype(
+        max_adu = int(2**self.bitdepth - 1) * u.adu
+        adu = (electrons_out * self.sensitivity).astype(
             int
         )  # Convert to discrete numbers
 
-        adu += self._offset.astype(int)
+        adu += self.offset
 
         # models pixel saturation
         adu[adu > max_adu] = max_adu
