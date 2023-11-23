@@ -30,11 +30,11 @@ class PointSource(Source):
             shape=(field_size, field_size, 0),
             dtype=complex,
         )
-        complex_amplitude = np.exp(
+        complex_amplitude = (1 / field_size) * np.exp(
             1j * (self.incidence_angles[0] * x_grid + self.incidence_angles[1] * y_grid)
         )
         return ComplexAmplitude(
-            complex_amplitude=complex_amplitude, photon=self.spectrum.photon_number
+            complex_amplitude=complex_amplitude, flux=self.spectrum.flux
         )
 
 
@@ -51,11 +51,18 @@ class ExtendedSource(Source):
             shape=(field_size, field_size, len(self.incidence_angles_list)),
             dtype=complex,
         )
+        # get the number of points comprising the input path
+        n_points = len(self.incidence_angles_list)
+
         for i, incidence_angles in enumerate(self.incidence_angles_list):
-            complex_amplitude[:, :, i] = np.exp(
-                1j * (incidence_angles[0] * x_grid + incidence_angles[1] * y_grid)
+            complex_amplitude[:, :, i] = (
+                (1 / field_size)
+                * (1 / n_points**0.5)
+                * np.exp(
+                    1j * (incidence_angles[0] * x_grid + incidence_angles[1] * y_grid)
+                )
             )
 
         return ComplexAmplitude(
-            complex_amplitude=complex_amplitude, photon=self.spectrum.photon_number
+            complex_amplitude=complex_amplitude, flux=self.spectrum.flux
         )

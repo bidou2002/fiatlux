@@ -12,7 +12,13 @@ from ..physical_object.complex_amplitude import ComplexAmplitude
 
 class Mask(OpticalObject):
     @abstractmethod
-    def compute_complex_transparency(self, size: int):
+    def compute_complex_transparency(self, field_size: int) -> np.ndarray:
+        pass
+
+    @abstractmethod
+    def compute_transformation(
+        self, complex_amplitudes: list[ComplexAmplitude]
+    ) -> list[ComplexAmplitude]:
         pass
 
 
@@ -37,6 +43,7 @@ class CircularPupil(Mask):
             ((x_grid - field_size // 2) ** 2 + (y_grid - field_size // 2) ** 2)
             <= (pupil_diameter_px // 2) ** 2
         ] = 1
+        # normalize the pupil so that the integral of squared values is 1
         complex_amplitude = complex_amplitude / np.sum(complex_amplitude) ** 0.5
         return complex_amplitude
 
@@ -45,13 +52,15 @@ class CircularPupil(Mask):
     ) -> list[ComplexAmplitude]:
         # get shape of the field
         shape = complex_amplitudes[0].field_size()
+
         # compute the complex transparency of the mask
         complex_transparency = self.compute_complex_transparency(shape)
+
         # define the output list
         res = []
         for complex_amplitude in complex_amplitudes:
             # compute the number of photons
-            n_photon = complex_amplitude.photon * self._surface
+            n_photon = complex_amplitude.flux * self._surface
 
             # check if the complex_amplitude is a 2D or 3D array
             if complex_amplitude.complex_amplitude.ndim == complex_transparency.ndim:
@@ -60,17 +69,24 @@ class CircularPupil(Mask):
                 )
             else:
                 # Reshape the array to the new shape
-                complex_transparency = complex_transparency[:, :, np.newaxis]
+                complex_transparency_new_axis = complex_transparency[:, :, np.newaxis]
 
                 masked_complex_amplitude = (
-                    complex_amplitude.complex_amplitude * complex_transparency
+                    complex_amplitude.complex_amplitude * complex_transparency_new_axis
                 )
 
             res += [
                 ComplexAmplitude(
                     complex_amplitude=masked_complex_amplitude,
-                    photon=n_photon,
+                    flux=n_photon,
                 )
             ]
 
         return res
+
+
+class Zernike(Mask):
+    def __init__(self, physical_diameter: float, resolution: float):
+        self.physical_diameter = physical_diameter * u.meter
+        self.resolution = resolution * u.pixel / u.meter
+        self._surface = np.pi * (self.physical_diameter / 2) ** 2

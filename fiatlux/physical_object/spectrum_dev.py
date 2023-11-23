@@ -7,12 +7,14 @@ import numpy as np
 import astropy.constants as C
 import astropy.units as u
 
+import astropy
+
 
 @dataclass
 class SpectralBandCharacteristics:
     lambda_eff: float
     delta_lambda: float
-    f_0: float
+    f_0: astropy.units.quantity.Quantity
 
 
 class SpectralBand(Enum):
@@ -46,7 +48,7 @@ class SpectralFilter(Enum):
 
 class Spectrum:
     def __init__(self):
-        self.photon_number: float = 0.0
+        self.flux: float = 0.0
 
     # def __post_init__(self):
     #     # need typing ???
@@ -69,7 +71,7 @@ class Monochromatic(Spectrum):
     def __post_init__(self):
         self.wavelength *= u.meter
         self.irradiance *= u.watt / u.meter**2
-        self.photon_number = self.compute_photon_flux()
+        self.flux = self.compute_photon_flux().decompose()
 
     def compute_photon_flux(self):
         c = C.c  # speed of light
@@ -116,7 +118,7 @@ class Photometric(Spectrum):
     spectral_band: SpectralBand
 
     def __post_init__(self):
-        self.photon_number = self.compute_photon_flux()
+        self.flux = self.compute_photon_flux()
 
     def compute_photon_flux(self):
         f_0 = self.spectral_band.value.f_0

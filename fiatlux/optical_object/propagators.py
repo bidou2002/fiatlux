@@ -30,17 +30,17 @@ class FFT(Propagator):
         complex_amplitudes: list[ComplexAmplitude],
     ) -> list[ComplexAmplitude]:
         tmp = []
+        shape = np.shape(complex_amplitudes[0].complex_amplitude)
+        a = pyfftw.empty_aligned(shape, dtype="complex128")
+        b = pyfftw.empty_aligned(shape, dtype="complex128")
+        fft = pyfftw.FFTW(a, b, axes=(0, 1), threads=self.n_threads)
         for complex_amplitude in complex_amplitudes:
-            shape = np.shape(complex_amplitude.complex_amplitude)
-            a = pyfftw.empty_aligned(shape, dtype="complex128")
-            b = pyfftw.empty_aligned(shape, dtype="complex128")
-            fft = pyfftw.FFTW(a, b, axes=(0, 1), threads=self.n_threads)
             tmp += [
                 ComplexAmplitude(
                     complex_amplitude=np.fft.fftshift(
                         fft(np.fft.fftshift(complex_amplitude.complex_amplitude))
                     ),
-                    photon=complex_amplitude.photon,
+                    flux=complex_amplitude.flux,
                 )
             ]
         return tmp

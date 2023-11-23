@@ -45,6 +45,7 @@ class Field:
         # Initialize field with complex amplitudes from sources
         for source in self.sources:
             current_complex_amplitudes += [source.compute_field(self.field_size)]
+            # needs to add the UNITS HERE !!!!
 
         # propagate the complex amplitudes through each module of the optical states
         for optical_state in self.optical_states:

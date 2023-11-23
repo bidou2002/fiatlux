@@ -8,15 +8,15 @@ import numpy as np
 @dataclass
 class ComplexAmplitude:
     complex_amplitude: np.ndarray
-    photon: float
+    flux: float
 
-    def compute_amplitude(self):
+    def amplitude(self):
         return np.abs(self.complex_amplitude)
 
-    def compute_phase(self):
+    def phase(self):
         return np.angle(self.complex_amplitude)
 
-    def compute_intensity(self):
+    def intensity(self):
         return np.abs(self.complex_amplitude) ** 2
 
     def field_size(self):
