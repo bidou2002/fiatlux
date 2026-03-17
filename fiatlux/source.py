@@ -1,68 +1,57 @@
-# -*- coding: utf-8 -*-
-"""
-  ______                              
- / _____)                             
-( (____   ___  _   _  ____ ____ _____ 
- \____ \ / _ \| | | |/ ___) ___) ___ |
- _____) ) |_| | |_| | |  ( (___| ____|
-(______/ \___/|____/|_|   \____)_____)
+from dataclasses import dataclass, field
+from typing import Optional
+from abc import ABC, abstractmethod
 
-Created on Fri Oct 13 10:05:00 2023
+import torch
 
-@author: pjanin
-"""
-
-import numpy as np
-import scipy as sc
-import matplotlib.pyplot as plt
-import astropy.units as u
-
-from .field import Field
-from .spectrum import Spectrum
+from fiatlux.optical_elements.base import OpticalElement
+from fiatlux.field import Field
+from fiatlux.spectrum import Spectrum
+from fiatlux.utils.resolution import Resolution
+from fiatlux.grid import Grid
 
 
-class Source:
-    """The Source class define the physical properties of a source."""
+class Source(ABC):
+    """Source active : génère un champ, n'en reçoit pas."""
 
-    # Constructor
-    def __init__(self, **kwargs):
-        # Name of the source
-        self.name = kwargs.get("name", "unamed_source")
+    def __init__(self, spectrum: Spectrum):
+        self.spectrum = spectrum
 
-        # Define type of field - default is plane wave
-        self.type = kwargs.get("type", "plane_wave")
+    @abstractmethod
+    def generate_field(self) -> Field:
+        """Génère le champ initial — ne prend pas de Field en entrée."""
+        raise NotImplementedError(
+            "La méthode generate doit être implémentée par les sous-classes."
+        )
 
-        # Define type-specific arguments
-        match self.type:
-            case "plane_wave":
-                self.type_arguments = {
-                    "incidence_angles": kwargs.get("incidence_angles", [0.0, 0.0]),
-                }
-            case "gaussian_wave":
-                self.type_arguments = {
-                    "center": kwargs.get("center", [0.0, 0.0]),
-                    "variance": kwargs.get("variance", 1.0),
-                }
-            case "point_source":
-                self.type_arguments = {
-                    "center": kwargs.get("center", [0.0, 0.0])
-                }
-            case "extended_object":
-                self.type_arguments = {
-                    "incidence_angles_list": kwargs.get("incidence_angles_list", [[0.0, 0.0]])
-                }
 
-        # Magnitude of the source
-        self.magnitude = kwargs.get("magnitude", 0)
+@dataclass  # ← dataclass, pas une classe normale
+class IncidenceAngle:
+    tip: float = 0.0
+    tilt: float = 0.0
 
-        # Optical band of observation
-        self.optical_band = kwargs.get("optical_band", "V")
 
-        # Parameters corresponding to the spectrum
-        lambda_eff, delta_lambda, f_0 = Spectrum.photometry(self.optical_band)
+class PlaneWave(Source):
 
-        # Effective wavelength
-        self._wavelength = lambda_eff
+    def __init__(
+        self,
+        spectrum: Spectrum,
+        incidence_angle: IncidenceAngle = None,
+    ):
+        super().__init__(spectrum)
+        self.incidence_angle = incidence_angle or IncidenceAngle()
 
-        # Photon flux at the pupil in [photon / m2 / s]
-        self.photon_flux = f_0 * 10 ** (-self.magnitude / 2.5)
+    def generate_field(self, grid: Grid) -> Field:
+        x_grid, y_grid = grid.meshgrid()
+
+        complex_amplitude = (
+            torch.exp(
+                1j * self.incidence_angle.tip * x_grid
+                + 1j * self.incidence_angle.tilt * y_grid
+            )
+            .to(torch.complex64)
+            .unsqueeze(0)
+            .expand(self.spectrum.wavelengths.size, -1, -1)
+        )
+
+        return Field(complex_amplitude, grid)
