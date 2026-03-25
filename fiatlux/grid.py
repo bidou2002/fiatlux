@@ -1,15 +1,27 @@
-from dataclasses import dataclass
+# grid.py
+from __future__ import annotations
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 import torch
+
+from fiatlux.spectrum import Spectrum
+
+
+class BaseGrid(ABC):
+
+    @abstractmethod
+    def meshgrid(self) -> tuple[torch.Tensor, torch.Tensor]: ...
+
+    @abstractmethod
+    def to(self, device: torch.device) -> "BaseGrid": ...
 
 
 @dataclass
-class Grid:
-    """Grille de discrétisation spatiale définie par l'utilisateur."""
-
-    nx: int  # nombre de pixels en x
-    ny: int  # nombre de pixels en y
-    dx: float  # pas spatial en x (m)
-    dy: float  # pas spatial en y (m)
+class Grid(BaseGrid):
+    nx: int
+    ny: int
+    dx: float
+    dy: float
     device: torch.device = torch.device("cpu")
 
     @property
@@ -23,5 +35,5 @@ class Grid:
     def meshgrid(self) -> tuple[torch.Tensor, torch.Tensor]:
         return torch.meshgrid(self.x, self.y, indexing="xy")
 
-    def to(self, device: torch.device) -> "Grid":
+    def to(self, device: torch.device) -> Grid:
         return Grid(self.nx, self.ny, self.dx, self.dy, device)

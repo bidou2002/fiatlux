@@ -44,14 +44,14 @@ class PlaneWave(Source):
     def generate_field(self, grid: Grid) -> Field:
         x_grid, y_grid = grid.meshgrid()
 
-        complex_amplitude = (
-            torch.exp(
-                1j * self.incidence_angle.tip * x_grid
-                + 1j * self.incidence_angle.tilt * y_grid
-            )
-            .to(torch.complex64)
-            .unsqueeze(0)
-            .expand(self.spectrum.wavelengths.size, -1, -1)
-        )
+        complex_amplitude = []
+        for wl in self.spectrum.wavelengths:
+            t = torch.exp(
+                1j * self.incidence_angle.tip * x_grid / wl
+                + 1j * self.incidence_angle.tilt * y_grid / wl
+            ).to(torch.complex64)
+            complex_amplitude.append(t)
 
-        return Field(complex_amplitude, grid)
+        complex_amplitude = torch.stack(complex_amplitude, dim=0)
+
+        return Field(complex_amplitude, grid, self.spectrum)
