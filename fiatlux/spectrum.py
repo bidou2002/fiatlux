@@ -50,37 +50,38 @@ class PhotometricBand:
 
 
 class Spectrum:
-    def __init__(self, band: Band, samples: int):
-        self.wavelengths: torch.ndarray = None
-        self.fluxes: torch.ndarray = None
+    def __init__(self, magnitude: float, band: Band, samples: int):
+        self.magnitude = magnitude
+        self.wavelengths: torch.Tensor = None
+        self.fluxes: torch.Tensor = None
 
         self._set_wavelengths(band, samples)
-        self._set_fluxes(band, samples)
+        self._set_fluxes(self.magnitude, band, samples)
 
     def _set_wavelengths(self, band: Band, samples: int):
         self.wavelengths = band.central_wavelength + band.delta_wavelength * (
             torch.linspace(0, 1, samples) - 0.5
         )
 
-    def _set_fluxes(self, band: Band, samples: int):
-        self.fluxes = band.photon_flux(0) * torch.ones(samples)
+    def _set_fluxes(self, magnitude: float, band: Band, samples: int):
+        self.fluxes = band.photon_flux(magnitude) * torch.ones(samples) / samples
+
+    # @classmethod
+    # def from_sampling(cls, band: torch.Tensor, Nu: torch.Tensor) -> Spectrum:
+    #     spectrum = cls.__new__(cls)
+    #     lambda_max = band.central_wavelength + band.delta_wavelength / 2
+    #     # lambda_min = band.central_wavelength - band.delta_wavelength / 2
+    #     d_lambda = lambda_max / Nu
+    #     n_lambda = int(torch.round(torch.asarray(band.delta_wavelength / d_lambda)))
+    #     spectrum.wavelengths = (
+    #         lambda_max - torch.linspace(n_lambda, 0, n_lambda) * d_lambda
+    #     )
+
+    #     cls._set_fluxes(band, n_lambda)
+    #     return spectrum
 
     @classmethod
-    def from_sampling(cls, band: torch.Tensor, Nu: torch.Tensor) -> Spectrum:
-        spectrum = cls.__new__(cls)
-        lambda_max = band.central_wavelength + band.delta_wavelength / 2
-        # lambda_min = band.central_wavelength - band.delta_wavelength / 2
-        d_lambda = lambda_max / Nu
-        n_lambda = int(torch.round(torch.asarray(band.delta_wavelength / d_lambda)))
-        spectrum.wavelengths = (
-            lambda_max - torch.linspace(n_lambda, 0, n_lambda) * d_lambda
-        )
-
-        cls._set_fluxes(band, n_lambda)
-        return spectrum
-
-    @classmethod
-    def from_sampling(cls, band: Band, Nu: int) -> "Spectrum":
+    def from_sampling(cls, magnitude: float, band: Band, Nu: int) -> Spectrum:
         """
         Construit un spectre dont dλ correspond à 1 pixel dans le plan focal.
 
@@ -99,6 +100,6 @@ class Spectrum:
         spectrum.wavelengths = torch.sort(
             lambda_max - torch.arange(n_lambda) * d_lambda
         ).values
-        spectrum.fluxes = band.photon_flux(0) * torch.ones(n_lambda)
+        spectrum._set_fluxes(magnitude, band, n_lambda)
 
         return spectrum

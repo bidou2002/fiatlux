@@ -10,133 +10,138 @@ from fiatlux.spectrum import Spectrum
 
 
 class Mask(OpticalElement, ABC):
+    """
+    Base mask class.
+    Grid (and spectrum for chromatic masks) known at construction.
+    Transmission built once at construction, cached.
+    """
 
-    complex_transmission: torch.Tensor = None
+    def __init__(self):
+        self.transmission: torch.Tensor | None = None
+        self.opd: torch.Tensor | None = None
+        self.complex_transmission: torch.Tensor | None = None
+        self.recompute = False
 
     @abstractmethod
-    def build(self, grid: Grid, spectrum: Spectrum | None = None) -> None:
-        raise NotImplementedError(
-            "La méthode build doit être implémentée par les sous-classes."
+    def _build_transmission(self, grid: Grid, spectrum: Spectrum) -> None: ...
+
+    @abstractmethod
+    def _build_opd(self, grid: Grid, spectrum: Spectrum) -> None: ...
+
+    def build(self, grid: Grid, spectrum: Spectrum) -> None:
+        self._build_transmission(grid, spectrum)
+        self._build_opd(grid, spectrum)
+        self.complex_transmission = self.transmission * torch.exp(
+            1j * 2 * torch.pi * self.opd / spectrum.wavelengths[:, None, None]
         )
 
     def apply(self, field: Field) -> Field:
-        raise NotImplementedError(
-            "La méthode build doit être implémentée par les sous-classes."
+        if self.complex_transmission is None or self.recompute:
+            self.build(field.grid, field.spectrum)
+
+        return Field(
+            field.complex_amplitude * self.complex_transmission,
+            field.grid,
+            field.spectrum,
         )
 
 
 class CircularAperture(Mask):
     def __init__(self, radius: float):
-        super().__init__()
         self.radius = radius
+        super().__init__()
 
-    def build(self, grid: Grid, spectrum=None):
-        x_grid, y_grid = grid.meshgrid()
-        r_grid = torch.sqrt(x_grid**2 + y_grid**2)
-        self.complex_transmission = (r_grid <= self.radius).to(torch.complex64)
-        self.complex_transmission /= self.complex_transmission.sum()
+    def _build_transmission(self, grid: Grid, spectrum: Spectrum) -> None:
+        x, y = grid.meshgrid()
+        r = torch.sqrt(x**2 + y**2)
+        self.transmission = r <= self.radius
 
-    def apply(self, field: Field) -> Field:
-        return Field(
-            field.complex_amplitude * self.complex_transmission,
-            field.grid,
-            field.spectrum,
-        )
+    def _build_opd(self, grid: Grid, spectrum: Spectrum) -> None:
+        self.opd = torch.zeros((grid.ny, grid.nx))
+
+    @property
+    def _symbol(self) -> str:
+        return "O"
 
 
 class ZeldaMask(Mask):
     def __init__(self, radius: float, well_depth: float):
-        super().__init__()
         self.radius = radius
         self.well_depth = well_depth
+        super().__init__()
 
-    def build(self, grid: Grid, spectrum: Spectrum):
-        x_grid, y_grid = grid.meshgrid()
-        r_grid = torch.sqrt(x_grid**2 + y_grid**2)
-        aperture = r_grid <= self.radius
+    def _build_transmission(self, grid: Grid, spectrum: Spectrum) -> None:
+        self.transmission = torch.ones((grid.ny, grid.nx))
 
-        transmissions = []
-        for wl in spectrum.wavelengths:
-            t = torch.exp(1j * 2 * torch.pi * (self.well_depth / wl) * aperture).to(
-                torch.complex64
-            )
-            transmissions.append(t)
-
-        self.complex_transmission = torch.stack(transmissions, dim=0)
-
-    def apply(self, field: Field) -> Field:
-
-        wavelengths = field.spectrum.wavelengths
-
-        def apply_one(
-            amplitude: torch.Tensor, wavelength: torch.Tensor
-        ) -> torch.Tensor:
-            return field.complex_amplitude * self.complex_transmission
-
-        # field.amplitude : (n_wavelengths, nx, ny)
-        amplitude = torch.vmap(apply_one)(field.complex_amplitude, wavelengths)
-        return Field(
-            field.complex_amplitude * self.complex_transmission,
-            field.grid,
-            field.spectrum,
-        )
+    def _build_opd(self, grid: Grid, spectrum: Spectrum) -> None:
+        x, y = grid.meshgrid()
+        r = torch.sqrt(x**2 + y**2)
+        self.opd = self.well_depth * (r <= self.radius)
 
 
 class ZeldaStop(Mask):
 
-    def __init__(self, radius: float, well_depth: float):
-        super().__init__()
+    def __init__(self, radius: float):
         self.radius = radius
-        self.well_depth = well_depth
-
-    def build(self, grid: Grid) -> None:
-
-        x_grid, y_grid = grid.meshgrid()
-        r_grid = torch.sqrt(x_grid**2 + y_grid**2)
-        aperture = r_grid <= self.radius
-
-        self.complex_transmission = aperture.to(torch.complex64)
-
-    def apply(self, field: Field) -> Field:
-
-        return Field(
-            field.complex_amplitude * self.complex_transmission,
-            field.grid,
-            field.spectrum,
-        )
-
-
-class FieldStop(Mask):
-
-    def __init__(self):
         super().__init__()
 
-    def build(self, grid: Grid, spectrum: Spectrum) -> None:
-        lambda_max = spectrum.wavelengths.max()
+    def _build_transmission(self, grid: Grid, spectrum: Spectrum) -> None:
+        x, y = grid.meshgrid()
+        r = torch.sqrt(x**2 + y**2)
+        self.transmission = r <= self.radius
 
-        x_max = grid.nx
-        y_max = grid.ny
+    def _build_opd(self, grid: Grid, spectrum: Spectrum) -> None:
+        self.opd = torch.zeros((grid.ny, grid.nx))
 
-        x, y = torch.meshgrid(
-            torch.linspace(-x_max, x_max, x_max),
-            torch.linspace(-y_max, y_max, y_max),
+
+class Piston(Mask):
+
+    def __init__(self, piston: float):
+        self.piston = piston
+        super().__init__()
+
+    def _build_transmission(self, grid: Grid, spectrum: Spectrum) -> None:
+        self.transmission = torch.ones((grid.ny, grid.nx))
+
+    def _build_opd(self, grid: Grid, spectrum: Spectrum) -> None:
+        self.opd = self.piston * torch.ones((grid.ny, grid.nx))
+
+
+class TipTilt(Mask):
+
+    def __init__(self, tip: float, tilt: float):
+        self.tip = tip
+        self.tilt = tilt
+        super().__init__()
+
+    def _build_transmission(self, grid: Grid, spectrum: Spectrum) -> None:
+        self.transmission = torch.ones((grid.ny, grid.nx))
+
+    def _build_opd(self, grid: Grid, spectrum: Spectrum) -> None:
+        x, y = grid.meshgrid()
+        self.opd = self.tip * x + self.tilt * y
+
+
+class ADC(Mask):
+
+    def __init__(self, amplitude: float, angle: float = torch.tensor(0.0)):
+        self.amplitude = amplitude
+        self.angle = angle
+        super().__init__()
+
+    def _build_transmission(self, grid: Grid, spectrum: Spectrum) -> None:
+        self.transmission = torch.ones((grid.ny, grid.nx))
+
+    def _build_opd(self, grid: Grid, spectrum: Spectrum) -> None:
+        x, y = grid.meshgrid()
+        self.opd = (
+            self.amplitude
+            * (
+                x * torch.cos(torch.tensor([self.angle]))
+                + y * torch.sin(torch.tensor([self.angle]))
+            )
+            * self._opd_factor(spectrum.wavelengths)[:, None, None]
         )
 
-        self.complex_transmission = torch.stack(
-            [
-                (
-                    (x.abs() <= x_max * (wl / lambda_max))
-                    & (y.abs() <= y_max * (wl / lambda_max))
-                ).to(torch.complex64)
-                for wl in spectrum.wavelengths
-            ],
-            dim=0,
-        )  # (n_λ, nx, ny)
-
-    def apply(self, field: Field) -> Field:
-
-        return Field(
-            field.complex_amplitude * self.complex_transmission,
-            field.grid,
-            field.spectrum,
-        )
+    def _opd_factor(self, wavelengths: torch.Tensor) -> torch.Tensor:
+        return (wavelengths / wavelengths.max()) ** 2

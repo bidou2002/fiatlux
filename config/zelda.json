@@ -1,0 +1,185 @@
+{
+    "spectrum": {
+        "magnitude": 9,
+        "band": "HCM"
+    },
+    "pupil_grid": {
+        "nx": 128,
+        "ny": 128,
+        "dx": 0.0078125,
+        "dy": 0.0078125
+    },
+    "focal_grid": {
+        "nx": 512,
+        "ny": 512,
+        "dx": 0.0009765625,
+        "dy": 0.0009765625
+    },
+    "source": {
+        "spectrum": {
+            "magnitude": 9,
+            "band": "HCM",
+            "Nu": 512
+        }
+    },
+    "identity_propagators": [
+        {
+            "grid": {
+                "nx": 128,
+                "ny": 128,
+                "dx": 0.0078125,
+                "dy": 0.0078125
+            }
+        },
+        {
+            "grid": {
+                "nx": 128,
+                "ny": 128,
+                "dx": 0.0078125,
+                "dy": 0.0078125
+            }
+        }
+    ],
+    "aperture": {
+        "radius": 0.5
+    },
+    "actuator_grid": {
+        "n_actuators_x": 20,
+        "n_actuators_y": 20,
+        "pitch": 0.05
+    },
+    "basis": {
+        "actuator_grid": {
+            "n_actuators_x": 20,
+            "n_actuators_y": 20,
+            "pitch": 0.05
+        },
+        "pixel_grid": {
+            "nx": 128,
+            "ny": 128,
+            "dx": 0.0078125,
+            "dy": 0.0078125
+        },
+        "influence_width": 1.0
+    },
+    "dm": {
+        "actuator_grid": {
+            "n_actuators_x": 10,
+            "n_actuators_y": 10,
+            "pitch": 0.1
+        },
+        "pixel_grid": {
+            "nx": 128,
+            "ny": 128,
+            "dx": 0.0078125,
+            "dy": 0.0078125
+        },
+        "control_basis": {
+            "actuator_grid": {
+                "n_actuators_x": 20,
+                "n_actuators_y": 20,
+                "pitch": 0.05
+            },
+            "pixel_grid": {
+                "nx": 128,
+                "ny": 128,
+                "dx": 0.0078125,
+                "dy": 0.0078125
+            },
+            "influence_width": 1.0
+        },
+        "stroke": 5e-6
+    },
+    "mfts": [
+        {
+            "focal_length": 0.125,
+            "output_grid": {
+                "nx": 512,
+                "ny": 512,
+                "dx": 0.0009765625,
+                "dy": 0.0009765625
+            }
+        },
+        {
+            "focal_length": 0.125,
+            "output_grid": {
+                "nx": 128,
+                "ny": 128,
+                "dx": 0.0078125,
+                "dy": 0.0078125
+            }
+        }
+    ],
+    "zelda_mask": {
+        "radius": 0.03125,
+        "well_depth": 0.1963495
+    },
+    "zelda_stop": {
+        "radius": 0.03125
+    },
+    "detector": {
+        "grid": {
+            "nx": 128,
+            "ny": 128,
+            "dx": 0.0078125,
+            "dy": 0.0078125
+        }
+    },
+    "serial_system": {
+        "source": {
+            "spectrum": {
+                "magnitude": 9,
+                "band": "HCM",
+                "Nu": 512
+            }
+        },
+        "detector": {
+            "grid": {
+                "nx": 128,
+                "ny": 128,
+                "dx": 0.0078125,
+                "dy": 0.0078125
+            }
+        },
+        "elements": [
+            "identity0",
+            "aperture",
+            "dm",
+            "mft0",
+            "zelda_stop",
+            "mft1",
+            "identity1"
+        ]
+    },
+    "interaction_matrix": {
+        "dm": {
+            "actuator_grid": {
+                "n_actuators_x": 10,
+                "n_actuators_y": 10,
+                "pitch": 0.1
+            },
+            "pixel_grid": {
+                "nx": 128,
+                "ny": 128,
+                "dx": 0.0078125,
+                "dy": 0.0078125
+            },
+            "control_basis": {
+                "actuator_grid": {
+                    "n_actuators_x": 20,
+                    "n_actuators_y": 20,
+                    "pitch": 0.05
+                },
+                "pixel_grid": {
+                    "nx": 128,
+                    "ny": 128,
+                    "dx": 0.0078125,
+                    "dy": 0.0078125
+                },
+                "influence_width": 1.0
+            },
+            "stroke": 5e-6
+        },
+        "poke_amplitude": 0.05
+    }
+}

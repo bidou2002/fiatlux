@@ -1,0 +1,89 @@
+from __future__ import annotations
+from dataclasses import dataclass
+from abc import ABC, abstractmethod
+
+import torch
+
+from fiatlux.field import Field
+from fiatlux.grid import Grid
+from fiatlux.detector import Detector
+from fiatlux.source import Source
+from fiatlux.propagator import Propagator
+
+
+@dataclass
+class SimulationStep:
+    """Snapshot du champ à une étape donnée."""
+
+    element: OpticalElement
+    field_before: Field  # champ avant application de l'élément
+    field_after: Field  # champ après
+
+
+class SerialSystem:
+    """
+    Encapsule la séquence d'éléments et orchestre la propagation.
+    Les éléments n'ont jamais connaissance du champ : c'est ici
+    que la logique de propagation + trace est centralisée.
+    """
+
+    def __init__(
+        self,
+        source: Source,
+        detector: Detector,
+        elements: list[OpticalElement | Propagator] = None,
+    ):
+        self.source = source
+        self.detector = detector
+        self.elements = elements
+
+    def run(self) -> SimulationResult:
+        """
+        Propage le champ à travers tous les éléments dans l'ordre axial.
+        Retourne un SimulationResult avec la trace complète.
+        """
+        steps: list[SimulationStep] = []
+
+        current_field = self.source.generate_field(self.elements[0].grid)
+        steps.append(SimulationStep(self.source, None, current_field))
+
+        for element in self.elements:
+
+            field_before = current_field
+            field_after = element.apply(current_field)
+
+            steps.append(SimulationStep(element, field_before, field_after))
+            current_field = field_after
+
+        self.detector.acquire(current_field)
+
+        return SimulationResult(steps)
+
+    def __str__(self) -> str:
+        s = ""
+        for element in self.elements:
+            try:
+                s += element._symbol + " "
+            except:
+                pass
+        return s
+
+
+# ─────────────────────────────────────────────
+# Résultat de simulation : accès à la trace
+# ─────────────────────────────────────────────
+
+
+class SimulationResult:
+    def __init__(self, steps: list[SimulationStep]):
+        self.steps = steps
+
+    def field_at(self, element_index: int) -> Field:
+        """Récupère le champ après un type d'élément donné."""
+        return self.steps[element_index].field_after
+
+    def intensity_at(self, element_index: int) -> torch.Tensor:
+        return self.field_at(element_index).intensity()
+
+    def __iter__(self):
+        return iter(self.steps)

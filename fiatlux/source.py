@@ -11,47 +11,72 @@ from fiatlux.utils.resolution import Resolution
 from fiatlux.grid import Grid
 
 
+@dataclass
 class Source(ABC):
-    """Source active : génère un champ, n'en reçoit pas."""
+    """
+    Active element — generates a Field, does not receive one.
+    Grid and spectrum are known at construction time.
+    The field is generated once and cached.
+    """
 
     def __init__(self, spectrum: Spectrum):
         self.spectrum = spectrum
 
+    def _get_fluxes(self, grid: Grid) -> torch.Tensor:
+        return self.spectrum.fluxes * grid.dx * grid.dy
+
     @abstractmethod
-    def generate_field(self) -> Field:
-        """Génère le champ initial — ne prend pas de Field en entrée."""
-        raise NotImplementedError(
-            "La méthode generate doit être implémentée par les sous-classes."
-        )
+    def generate_field(self, grid: Grid) -> Field: ...
+
+    @property
+    def _symbol(self) -> str: ...
 
 
-@dataclass  # ← dataclass, pas une classe normale
+@dataclass
 class IncidenceAngle:
-    tip: float = 0.0
-    tilt: float = 0.0
+    tip: float = 0.0  # rad
+    tilt: float = 0.0  # rad
 
 
 class PlaneWave(Source):
 
+    def __init__(self, spectrum: Spectrum):
+        super().__init__(spectrum)
+
+    def generate_field(self, grid: Grid) -> Field:
+        return Field(
+            self._get_fluxes(grid=grid)[:, None, None] * torch.ones((grid.ny, grid.nx)),
+            grid,
+            self.spectrum,
+        )
+
+    @property
+    def _symbol(self) -> str:
+        return "|"
+
+
+class GaussianSource(Source):
+
     def __init__(
         self,
         spectrum: Spectrum,
-        incidence_angle: IncidenceAngle = None,
+        waist: float,
     ):
+        self.waist = waist
         super().__init__(spectrum)
-        self.incidence_angle = incidence_angle or IncidenceAngle()
 
     def generate_field(self, grid: Grid) -> Field:
-        x_grid, y_grid = grid.meshgrid()
+        x, y = grid.meshgrid()
+        n_wavelengths = len(self.spectrum.wavelengths)
 
-        complex_amplitude = []
-        for wl in self.spectrum.wavelengths:
-            t = torch.exp(
-                1j * self.incidence_angle.tip * x_grid / wl
-                + 1j * self.incidence_angle.tilt * y_grid / wl
-            ).to(torch.complex64)
-            complex_amplitude.append(t)
+        envelope = (
+            (torch.exp(-(x**2 + y**2) / self.waist**2))
+            .to(torch.complex64)
+            .unsqueeze(0)
+            .expand(n_wavelengths, -1, -1)
+        )
+        return Field(envelope, grid, self.spectrum)
 
-        complex_amplitude = torch.stack(complex_amplitude, dim=0)
-
-        return Field(complex_amplitude, grid, self.spectrum)
+    @property
+    def _symbol(self) -> str:
+        return "G"

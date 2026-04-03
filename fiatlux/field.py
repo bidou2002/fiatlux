@@ -44,8 +44,14 @@ class Field:
             self.complex_amplitude - field.complex_amplitude, self.grid, self.spectrum
         )
 
+    def __add__(self, field: Field) -> Field:
+        return Field(
+            self.complex_amplitude + field.complex_amplitude, self.grid, self.spectrum
+        )
+
     def plot(self, wavelength_index: int = -1):
         import matplotlib.pyplot as plt
+        import matplotlib.colors as colors
 
         fig, axs = plt.subplots(1, 2, figsize=(12, 5))
         pcm = axs[0].imshow(
@@ -56,6 +62,7 @@ class Field:
                 self.grid.y.min(),
                 self.grid.y.max(),
             ],
+            norm=colors.PowerNorm(1),
         )
         axs[0].set_xlabel("x (m)")
         axs[0].set_ylabel("y (m)")
@@ -72,6 +79,8 @@ class Field:
                 self.grid.y.min(),
                 self.grid.y.max(),
             ],
+            vmin=-torch.pi,
+            vmax=torch.pi,
         )
         axs[1].set_xlabel("x (m)")
         axs[1].set_ylabel("y (m)")
