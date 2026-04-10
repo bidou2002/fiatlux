@@ -3,8 +3,8 @@ from typing import Optional
 from abc import ABC, abstractmethod
 import numpy as np
 
-from fiatlux.field import Field
-from fiatlux.grid import Grid
+from fiatlux.core.field import Field
+from fiatlux.core.grid import Grid
 
 
 @dataclass

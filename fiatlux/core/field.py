@@ -3,13 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 import torch
 
-from fiatlux.grid import BaseGrid, Grid
-from fiatlux.spectrum import Spectrum
+from fiatlux.core.grid import BaseGrid, Grid
+from fiatlux.core.spectrum import Spectrum
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from fiatlux.optical_elements.mask import Mask
+    from fiatlux.optics.elements.mask import Mask
 
 
 @dataclass

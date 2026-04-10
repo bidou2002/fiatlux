@@ -1,9 +1,9 @@
 import torch
 
-from fiatlux.field import Field
-from fiatlux.grid import Grid
-from fiatlux.spectrum import Spectrum
-from fiatlux.optical_elements.mask import Mask
+from fiatlux.core.field import Field
+from fiatlux.core.grid import Grid
+from fiatlux.core.spectrum import Spectrum
+from fiatlux.optics.elements.mask import Mask
 
 
 class ShanonFieldStop(Mask):

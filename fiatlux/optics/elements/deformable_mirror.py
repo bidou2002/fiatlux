@@ -3,15 +3,19 @@ from abc import ABC, abstractmethod
 import torch
 from typing import Callable
 
-from fiatlux.grid import Grid
-from fiatlux.field import Field
-from fiatlux.detector import Detector
-from fiatlux.optical_system import SerialSystem
-from fiatlux.spectrum import Spectrum
-from fiatlux.optical_system import SimulationResult
+from fiatlux.core.grid import Grid
+from fiatlux.core.field import Field
+from fiatlux.optics.detector import Detector
+from fiatlux.system.optical_system import SerialSystem
+from fiatlux.core.spectrum import Spectrum
+from fiatlux.system.optical_system import SimulationResult
+from fiatlux.utils.zernike import zernike_basis
+
+from fiatlux.config.registry import register_type
 
 
 @dataclass
+@register_type("ActuatorGrid")
 class ActuatorGrid:
     """Physical layout of DM actuators."""
 
@@ -21,6 +25,7 @@ class ActuatorGrid:
 
 
 @dataclass
+@register_type("ControlBasis")
 class ControlBasis(ABC):
 
     @abstractmethod
@@ -32,7 +37,8 @@ class ControlBasis(ABC):
 
 
 @dataclass
-class ZonalBasis(ControlBasis):
+@register_type("GaussianZonalBasis")
+class GaussianZonalBasis(ControlBasis):
     actuator_grid: ActuatorGrid
     pixel_grid: Grid
     influence_width: float
@@ -73,6 +79,103 @@ class ZonalBasis(ControlBasis):
 
 
 @dataclass
+@register_type("SquareZonalBasis")
+class SquareZonalBasis(ControlBasis):
+    actuator_grid: ActuatorGrid
+    pixel_grid: Grid
+    influence_width: float
+
+    def build_command_matrix(self):
+        """
+        Gaussian influence function for each actuator onto the pixel grid.
+        Shape : (nx*ny, n_actuators)
+        """
+        ag = self.actuator_grid
+        pg = self.pixel_grid
+        x, y = pg.meshgrid()  # (nx, ny)
+        x_flat = x.flatten()  # (nx*ny,)
+        y_flat = y.flatten()
+
+        # Actuator positions in meters
+        ax = (torch.arange(ag.n_actuators_x) - ag.n_actuators_x // 2 + 1 / 2) * ag.pitch
+        ay = (torch.arange(ag.n_actuators_y) - ag.n_actuators_y // 2 + 1 / 2) * ag.pitch
+        ax_grid, ay_grid = torch.meshgrid(ax, ay, indexing="xy")
+        ax_flat = ax_grid.flatten()  # (n_actuators,)
+        ay_flat = ay_grid.flatten()
+
+        # Distance from each pixel to each actuator : (nx*ny, n_actuators)
+        dx = x_flat[:, None] - ax_flat[None, :]
+        dy = y_flat[:, None] - ay_flat[None, :]
+
+        influence = torch.zeros(self.pixel_grid.ny * self.pixel_grid.nx, self.n_modes())
+        influence[
+            (torch.abs(dx) < self.influence_width)
+            & (torch.abs(dy) < self.influence_width)
+        ] = 1
+
+        return influence
+
+    def n_modes(self):
+        return self.actuator_grid.n_actuators_x * self.actuator_grid.n_actuators_y
+
+
+@dataclass
+@register_type("SquarePTTZonalBasis")
+class SquarePTTZonalBasis(ControlBasis):
+    actuator_grid: ActuatorGrid
+    pixel_grid: Grid
+    influence_width: float
+
+    def build_command_matrix(self):
+        """
+        Gaussian influence function for each actuator onto the pixel grid.
+        Shape : (nx*ny, n_actuators)
+        """
+        ag = self.actuator_grid
+        pg = self.pixel_grid
+        x, y = pg.meshgrid()  # (nx, ny)
+        x_flat = x.flatten()  # (nx*ny,)
+        y_flat = y.flatten()
+
+        # Actuator positions in meters
+        ax = (torch.arange(ag.n_actuators_x) - ag.n_actuators_x // 2 + 1 / 2) * ag.pitch
+        ay = (torch.arange(ag.n_actuators_y) - ag.n_actuators_y // 2 + 1 / 2) * ag.pitch
+        ax_grid, ay_grid = torch.meshgrid(ax, ay, indexing="xy")
+        ax_flat = ax_grid.flatten()  # (n_actuators,)
+        ay_flat = ay_grid.flatten()
+
+        # Distance from each pixel to each actuator : (nx*ny, n_actuators)
+        dx = x_flat[:, None] - ax_flat[None, :]
+        dy = y_flat[:, None] - ay_flat[None, :]
+
+        piston = torch.zeros(dx.shape)
+        piston[
+            (torch.abs(dx) < self.influence_width)
+            & (torch.abs(dy) < self.influence_width)
+        ] = 1
+
+        tip = dx
+        tip[
+            (torch.abs(dx) < self.influence_width)
+            & (torch.abs(dy) < self.influence_width)
+        ] = 1
+
+        tilt = dy
+        tilt[
+            (torch.abs(dx) < self.influence_width)
+            & (torch.abs(dy) < self.influence_width)
+        ] = 1
+
+        influence = torch.cat([piston, tip, tilt], dim=1)
+
+        return influence
+
+    def n_modes(self):
+        return 3 * self.actuator_grid.n_actuators_x * self.actuator_grid.n_actuators_y
+
+
+@dataclass
+@register_type("FourierBasis")
 class FourierBasis(ControlBasis):
     pixel_grid: Grid
     order: int
@@ -110,6 +213,28 @@ class FourierBasis(ControlBasis):
         return 2 * (self.order**2 - 1)
 
 
+@dataclass
+@register_type("ZernikeBasis")
+class ZernikeBasis(ControlBasis):
+    pixel_grid: Grid
+    n: int
+
+    def build_command_matrix(
+        self,
+    ) -> torch.Tensor:
+
+        modes = zernike_basis(
+            nterms=self.n + 1,
+            npix=self.pixel_grid.nx,
+        )
+
+        return modes[1:, ...].flatten(1, -1).T
+
+    def n_modes(self):
+        return self.n
+
+
+@register_type("DeformableMirror")
 class DeformableMirror(torch.nn.Module):
     """
     Deformable mirror — phase set by actuator voltages.

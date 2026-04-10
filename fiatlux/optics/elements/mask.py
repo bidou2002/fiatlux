@@ -1,14 +1,18 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 import torch
 
-from fiatlux.optical_elements.base import OpticalElement
-from fiatlux.grid import Grid
-from fiatlux.field import Field
-from fiatlux.spectrum import Spectrum
+from fiatlux.optics.elements.base import OpticalElement
+from fiatlux.core.grid import Grid
+from fiatlux.core.field import Field
+from fiatlux.core.spectrum import Spectrum
+
+from fiatlux.config.registry import register_type
 
 
+@dataclass
 class Mask(OpticalElement, ABC):
     """
     Base mask class.
@@ -16,11 +20,10 @@ class Mask(OpticalElement, ABC):
     Transmission built once at construction, cached.
     """
 
-    def __init__(self):
-        self.transmission: torch.Tensor | None = None
-        self.opd: torch.Tensor | None = None
-        self.complex_transmission: torch.Tensor | None = None
-        self.recompute = False
+    transmission: torch.Tensor | None = None
+    opd: torch.Tensor | None = None
+    complex_transmission: torch.Tensor | None = None
+    recompute = False
 
     @abstractmethod
     def _build_transmission(self, grid: Grid, spectrum: Spectrum) -> None: ...
@@ -45,7 +48,20 @@ class Mask(OpticalElement, ABC):
             field.spectrum,
         )
 
+    def __repr__(self):
+        return "".join(
+            (
+                self.__class__.__name__,
+                "(" f"transmission={self.transmission.type()}, ",
+                f"opd={self.opd.type()}, ",
+                f"complex_transmission={self.complex_transmission.type()}, ",
+                f"recompute={self.recompute}",
+                ")",
+            )
+        )
 
+
+@register_type("CircularAperture")
 class CircularAperture(Mask):
     def __init__(self, radius: float):
         self.radius = radius
@@ -64,6 +80,32 @@ class CircularAperture(Mask):
         return "O"
 
 
+@register_type("ArbitraryAperture")
+class ArbitraryAperture(Mask):
+    def __init__(self, transmission: torch.Tensor):
+        super().__init__()
+        self._input_transmission = transmission
+
+    def _build_transmission(self, grid: Grid, spectrum: Spectrum) -> None:
+        # Validate size compatibility
+        if self._input_transmission.shape != (grid.ny, grid.nx):
+            raise ValueError(
+                f"Transmission shape {self._input_transmission.shape} "
+                f"does not match grid shape {(grid.ny, grid.nx)}"
+            )
+
+        # Use provided tensor
+        self.transmission = self._input_transmission
+
+    def _build_opd(self, grid: Grid, spectrum: Spectrum) -> None:
+        self.opd = torch.zeros((grid.ny, grid.nx))
+
+    @property
+    def _symbol(self) -> str:
+        return "O"
+
+
+@register_type("ZeldaMask")
 class ZeldaMask(Mask):
     def __init__(self, radius: float, well_depth: float):
         self.radius = radius
@@ -79,6 +121,7 @@ class ZeldaMask(Mask):
         self.opd = self.well_depth * (r <= self.radius)
 
 
+@register_type("ZeldaStop")
 class ZeldaStop(Mask):
 
     def __init__(self, radius: float):
@@ -94,6 +137,7 @@ class ZeldaStop(Mask):
         self.opd = torch.zeros((grid.ny, grid.nx))
 
 
+@register_type("Piston")
 class Piston(Mask):
 
     def __init__(self, piston: float):
@@ -107,6 +151,7 @@ class Piston(Mask):
         self.opd = self.piston * torch.ones((grid.ny, grid.nx))
 
 
+@register_type("TipTilt")
 class TipTilt(Mask):
 
     def __init__(self, tip: float, tilt: float):
@@ -122,9 +167,10 @@ class TipTilt(Mask):
         self.opd = self.tip * x + self.tilt * y
 
 
+@register_type("ADC")
 class ADC(Mask):
 
-    def __init__(self, amplitude: float, angle: float = torch.tensor(0.0)):
+    def __init__(self, amplitude: torch.Tensor, angle: float = torch.tensor(0.0)):
         self.amplitude = amplitude
         self.angle = angle
         super().__init__()
@@ -134,14 +180,8 @@ class ADC(Mask):
 
     def _build_opd(self, grid: Grid, spectrum: Spectrum) -> None:
         x, y = grid.meshgrid()
-        self.opd = (
-            self.amplitude
-            * (
-                x * torch.cos(torch.tensor([self.angle]))
-                + y * torch.sin(torch.tensor([self.angle]))
-            )
-            * self._opd_factor(spectrum.wavelengths)[:, None, None]
-        )
 
-    def _opd_factor(self, wavelengths: torch.Tensor) -> torch.Tensor:
-        return (wavelengths / wavelengths.max()) ** 2
+        self.opd = self.amplitude[:, None, None] * (
+            x * torch.cos(torch.deg2rad(torch.as_tensor(self.angle)))
+            + y * torch.sin(torch.deg2rad(torch.as_tensor(self.angle)))
+        )

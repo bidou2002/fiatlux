@@ -4,11 +4,11 @@ from abc import ABC, abstractmethod
 
 import torch
 
-from fiatlux.optical_elements.base import OpticalElement
-from fiatlux.field import Field
-from fiatlux.spectrum import Spectrum
+from fiatlux.optics.elements.base import OpticalElement
+from fiatlux.core.field import Field
+from fiatlux.core.spectrum import Spectrum
 from fiatlux.utils.resolution import Resolution
-from fiatlux.grid import Grid
+from fiatlux.core.grid import Grid
 
 
 @dataclass

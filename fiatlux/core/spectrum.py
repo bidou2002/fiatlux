@@ -12,7 +12,7 @@ class Band:
 
     def photon_flux(self, magnitude: float) -> float:
         """Photon flux for a given magnitude."""
-        return self.f0 * 10 ** (-magnitude / 2.5)
+        return (1 / 368) * self.f0 * 10 ** (-magnitude / 2.5)
 
 
 class PhotometricBand:
@@ -47,6 +47,21 @@ class PhotometricBand:
     Na = Band(0.589e-6, 0, 3.3e12)
     EOS = Band(1.064e-6, 0, 3.3e12)
     HCM = Band(1.200e-6, 0.02e-6, 1.1e12)
+    HCM2 = Band(1.100e-6, 0.2e-6, 1.1e12)
+
+    @classmethod
+    def __class_getitem__(cls, key):
+        """
+        Enables:
+            PhotometricBand["R"]
+        """
+
+        try:
+            return getattr(cls, key)
+
+        except AttributeError:
+
+            raise KeyError(f"Unknown photometric band '{key}'")
 
 
 class Spectrum:
@@ -92,7 +107,7 @@ class Spectrum:
 
         # Nombre de canaux pour couvrir la bande avec ce pas
         n_lambda = int(
-            torch.round(torch.tensor(float((band.delta_wavelength / d_lambda))))
+            torch.round(torch.as_tensor(float((band.delta_wavelength / d_lambda))))
         )
 
         spectrum = cls.__new__(cls)

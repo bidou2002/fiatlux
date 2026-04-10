@@ -4,11 +4,11 @@ from abc import ABC, abstractmethod
 
 import torch
 
-from fiatlux.field import Field
-from fiatlux.grid import Grid
-from fiatlux.detector import Detector
-from fiatlux.source import Source
-from fiatlux.propagator import Propagator
+from fiatlux.core.field import Field
+from fiatlux.core.grid import Grid
+from fiatlux.optics.detector import Detector
+from fiatlux.core.source import Source
+from fiatlux.optics.propagator import Propagator
 
 
 @dataclass
@@ -29,23 +29,19 @@ class SerialSystem:
 
     def __init__(
         self,
-        source: Source,
-        detector: Detector,
         elements: list[OpticalElement | Propagator] = None,
     ):
-        self.source = source
-        self.detector = detector
         self.elements = elements
 
-    def run(self) -> SimulationResult:
+    def run(self, source: Source, detector: Detector = None) -> SimulationResult:
         """
         Propage le champ à travers tous les éléments dans l'ordre axial.
         Retourne un SimulationResult avec la trace complète.
         """
         steps: list[SimulationStep] = []
 
-        current_field = self.source.generate_field(self.elements[0].grid)
-        steps.append(SimulationStep(self.source, None, current_field))
+        current_field = source.generate_field(self.elements[0].grid)
+        steps.append(SimulationStep(source, None, current_field))
 
         for element in self.elements:
 
@@ -55,7 +51,8 @@ class SerialSystem:
             steps.append(SimulationStep(element, field_before, field_after))
             current_field = field_after
 
-        self.detector.acquire(current_field)
+        if detector:
+            detector.acquire(current_field)
 
         return SimulationResult(steps)
 

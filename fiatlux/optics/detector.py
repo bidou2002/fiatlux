@@ -1,7 +1,7 @@
 import torch
 
-from fiatlux.grid import Grid
-from fiatlux.field import Field
+from fiatlux.core.grid import Grid
+from fiatlux.core.field import Field
 
 
 class Detector:

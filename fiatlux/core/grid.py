@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 import torch
 
-from fiatlux.spectrum import Spectrum
+from fiatlux.core.spectrum import Spectrum
 
 
 class BaseGrid(ABC):
@@ -13,7 +13,7 @@ class BaseGrid(ABC):
     def meshgrid(self) -> tuple[torch.Tensor, torch.Tensor]: ...
 
     @abstractmethod
-    def to(self, device: torch.device) -> "BaseGrid": ...
+    def to(self, device: torch.device) -> BaseGrid: ...
 
 
 @dataclass
