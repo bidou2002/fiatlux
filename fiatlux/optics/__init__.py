@@ -5,7 +5,7 @@ from .propagator import Propagator
 from .elements import *
 
 __all__ = [
-    "ADC",
+    "ADCDispersionModel",
     "Detector",
     "Propagator",
 ]
