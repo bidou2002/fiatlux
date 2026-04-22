@@ -44,14 +44,15 @@ if __name__ == "__main__":
 
     # %% DEFINITIONS
     # Define source spectrum
-    spectrum = Spectrum.from_sampling(magnitude=5, band=PhotometricBand.HCM, Nu=512)
+    spectrum = Spectrum.from_sampling(magnitude=9, band=PhotometricBand.HCM, Nu=512)
 
     # System parameters
     f = 0.125
     lambda_max = spectrum.wavelengths.max()
     D = 38.542
 
-    pupil_mask = load_pupil()
+    pupil_mask, (x0, y0, r) = load_pupil("/Users/janinpop/Downloads/outputs/pupil.fits")
+    pupil_mask = torch.as_tensor(pupil_mask)
 
     # Pupil plane sampling
     Nx, Ny = pupil_mask.shape
@@ -73,20 +74,23 @@ if __name__ == "__main__":
     empty_propagator1 = IdentityPropagator(pupil_grid)
 
     # Create aperture
-    aperture = ArbitraryAperture(torch.as_tensor(pupil_mask))
+    aperture = ArbitraryAperture(
+        grid=pupil_grid, transmission=torch.as_tensor(pupil_mask)
+    )
 
     adc_model = ADCDispersionModel()
     amplitudes = adc_model.get_dispersion(angle=30, spectrum=spectrum)
     print(amplitudes / (lambda_max / D))
-    adc = ADC(amplitude=amplitudes, angle=90)
+    adc = ADC(grid=pupil_grid, amplitude=amplitudes, angle=90)
 
-    tip_tilt_compensator = TipTilt(tip=0, tilt=-amplitudes.max() / 2)
+    tip_tilt_compensator = TipTilt(grid=pupil_grid, tip=0, tilt=-amplitudes.max() / 2)
 
     n_modes = 2
     basis = ZernikeBasis(pixel_grid=pupil_grid, n=n_modes)
 
     # DM
     dm = DeformableMirror(
+        grid=pupil_grid,
         actuator_grid=ActuatorGrid(n_actuators_x=10, n_actuators_y=10, pitch=D / 10),
         pixel_grid=pupil_grid,
         control_basis=basis,
@@ -99,8 +103,7 @@ if __name__ == "__main__":
 
     theta = torch.as_tensor(lambda_max / 4)
     # Define zelda mask
-    zelda_mask = ZeldaMask(radius=f * lambda_max / D, well_depth=theta)
-    zelda_stop = ZeldaStop(radius=f * lambda_max / D)
+    zelda_stop = ZeldaStop(grid=focal_grid, radius=1.06 * f * lambda_max / D)
 
     detector = Detector(
         grid=pupil_grid,
@@ -126,11 +129,17 @@ if __name__ == "__main__":
 
     def response_function(result):
         detector.acquire(
-            (result.field_at(4) - result.field_at(-1))
-            + torch.exp(1j * torch.as_tensor(torch.pi) / 2) * result.field_at(-1)
+            (result.field_at(dm) - result.field_at(empty_propagator1))
+            + torch.exp(1j * torch.as_tensor(torch.pi) / 2)
+            * result.field_at(empty_propagator1)
         )
         return detector.image_buffer
 
+    res = system.run(source=source)
+    reference_image = response_function(res)
+
+    # %% LOAD IMAGE
+    cube = load_zelda_measurement("/Users/janinpop/Downloads/outputs/tilt_motor.fits")
     # %% FIT
     torch.manual_seed(0)
 
@@ -139,73 +148,88 @@ if __name__ == "__main__":
     dm._commands = commands_0
 
     res = system.run(source=source)
+    reference_image = response_function(res)
     print(*[(i, el) for i, el in enumerate(system.elements)], sep="\n")
 
-    res.field_at(5).plot()
-    plt.draw()
+    import numpy as np
 
-    res.field_at(6).plot()
-    plt.draw()
+    COEFFS = []
+    fig_coeffs, ax_coeffs = plt.subplots()
+    fig_coeffs_history, ax_coeffs_history = plt.subplots()
+    fig_im, ax_im = plt.subplots(1, 3)
 
-    plt.figure()
-    plt.imshow(response_function(res))
-    plt.colorbar()
-    plt.draw()
+    for i in range(50, 51):
 
-    reference_image = response_function(res)
-
-    observed_image = load_zelda_measurement()
-    observed_image = torch.tensor(
-        observed_image.astype(observed_image.dtype.newbyteorder("="))
-    )
-    observed_image /= observed_image.sum()
-
-    coeffs = torch.nn.Parameter(0.1 * torch.rand(dm.commands.shape, requires_grad=True))
-    optimizer = torch.optim.Adam([coeffs], lr=1e-2)
-
-    loss_plot = []
-
-    n_iter = 100
-
-    loss_fig, loss_ax = plt.subplots()
-
-    for i in range(n_iter):
-
-        optimizer.zero_grad()
-
-        simulated_image = (
-            forward_model(
-                system, source, commands=coeffs, response_function=response_function
-            )
-            - reference_image
+        observed_image = cube[i, y0 - r : y0 + r, x0 - r : x0 + r]
+        observed_image = (
+            torch.tensor(observed_image.astype(observed_image.dtype.newbyteorder("=")))
+            * pupil_mask
         )
-        simulated_image /= simulated_image.sum()
 
-        loss = torch.sum((simulated_image - observed_image) ** 2)
+        coeffs = torch.nn.Parameter(
+            0.1 * torch.rand(dm.commands.shape, requires_grad=True)
+        )
+        coeffs = torch.nn.Parameter(torch.tensor([0.0, 0.0], requires_grad=True))
+        optimizer = torch.optim.Adam([coeffs], lr=1e-1)
 
-        loss.backward()
+        n_iter = 200
+        history = []
 
-        optimizer.step()
-        loss_plot += [loss.item()]
+        for i in range(n_iter):
 
-        print(i, f"{loss.item():.5e}", end="\r")
+            optimizer.zero_grad()
 
-    loss_ax.plot(loss_plot)
-    loss_ax.set_xlim(0, n_iter)
-    loss_ax.set_yscale("log")
-    loss_fig.suptitle("Loss")
-    plt.draw()
+            simulated_image = (
+                (
+                    forward_model(
+                        system,
+                        source,
+                        commands=coeffs,
+                        response_function=response_function,
+                    )
+                )
+                * pupil_mask
+                * 0.001567428140352112
+            )
 
-    fig, ax = plt.subplots(1, 3)
-    fig.suptitle("$I_{fit} - I_{true}$")
-    ax[0].imshow((observed_image).detach())
-    ax[0].set_title("Bench image")
-    ax[1].imshow((simulated_image).detach())
-    ax[1].set_title("Simulated image")
-    ax[2].imshow(
-        (simulated_image.detach() - observed_image.detach()) / observed_image.detach()
-    )
-    ax[2].set_title("Normalized difference")
-    plt.draw()
+            loss = torch.sum((simulated_image - observed_image) ** 2)
+
+            loss.backward()
+
+            optimizer.step()
+            print(i, f"{loss.item():.5e}", end="\r")
+
+            history.append(coeffs.detach().cpu().numpy().copy())
+
+        sim_sum = simulated_image.sum().item()
+        obs_sum = observed_image.sum().item()
+
+        print("Flux ratio:", obs_sum / sim_sum)
+
+        COEFFS.append([coeffs.detach().numpy()])
+        COEFFS_stack = np.vstack(COEFFS)
+
+        ax_coeffs_history.clear()
+        pcm = ax_coeffs_history.plot(np.vstack(history))
+        ax_coeffs.legend(["Tip (x)", "Tilt (y)", "Focus (z)"])
+        plt.draw()
+
+        ax_coeffs.clear()
+        pcm = ax_coeffs.plot(COEFFS_stack)
+        ax_coeffs.legend(["Tip (x)", "Tilt (y)", "Focus (z)"])
+        plt.draw()
+
+        fig_im.suptitle("$I_{fit} - I_{true}$")
+        ax_im[0].imshow((observed_image).detach())
+        ax_im[0].set_title("Bench image")
+        ax_im[1].imshow((simulated_image).detach())
+        ax_im[1].set_title("Simulated image")
+        ax_im[2].imshow(
+            (simulated_image.detach() - observed_image.detach())
+            / observed_image.detach()
+        )
+        ax_im[2].set_title("Normalized difference")
+        plt.draw()
+        plt.pause(0.01)
 
     plt.show()

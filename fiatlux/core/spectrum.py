@@ -48,6 +48,7 @@ class PhotometricBand:
     EOS = Band(1.064e-6, 0, 3.3e12)
     HCM = Band(1.200e-6, 0.02e-6, 1.1e12)
     HCM2 = Band(1.100e-6, 0.2e-6, 1.1e12)
+    Mono = Band(1.200e-6, 0.0, 1.1e12)
 
     @classmethod
     def __class_getitem__(cls, key):

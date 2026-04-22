@@ -245,6 +245,7 @@ class DeformableMirror(torch.nn.Module):
 
     def __init__(
         self,
+        grid: Grid,
         actuator_grid: ActuatorGrid,
         pixel_grid: Grid,
         control_basis: ControlBasis,
@@ -252,6 +253,7 @@ class DeformableMirror(torch.nn.Module):
         influence_width: float = 1.5,  # actuator influence function width (in actuator pitches)
     ):
         torch.nn.Module.__init__(self)
+        self.grid = grid
         self.actuator_grid = actuator_grid
         self.pixel_grid = pixel_grid
         self.control_basis = control_basis
@@ -282,13 +284,13 @@ class DeformableMirror(torch.nn.Module):
         opd = self._command_matrix @ (self.commands * self.stroke)
         return opd.reshape(self.pixel_grid.nx, self.pixel_grid.ny)
 
-    def _build(self, grid: Grid, spectrum: Spectrum) -> None:
+    def _build(self, spectrum: Spectrum) -> None:
         self.complex_transmission = torch.exp(
             1j * 2 * torch.pi * self.opd / spectrum.wavelengths[:, None, None]
         )
 
     def apply(self, field: Field) -> Field:
-        self._build(field.grid, field.spectrum)
+        self._build(field.spectrum)
 
         return Field(
             field.complex_amplitude * self.complex_transmission,

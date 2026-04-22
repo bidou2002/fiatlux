@@ -9,6 +9,7 @@ from fiatlux.core.grid import Grid
 from fiatlux.optics.detector import Detector
 from fiatlux.core.source import Source
 from fiatlux.optics.propagator import Propagator
+from fiatlux.optics.elements.base import OpticalElement
 
 
 @dataclass
@@ -75,12 +76,21 @@ class SimulationResult:
     def __init__(self, steps: list[SimulationStep]):
         self.steps = steps
 
-    def field_at(self, element_index: int) -> Field:
-        """Récupère le champ après un type d'élément donné."""
-        return self.steps[element_index].field_after
+        self._element_to_step = {
+            id(step.element): step for step in steps if step.element is not None
+        }
 
-    def intensity_at(self, element_index: int) -> torch.Tensor:
-        return self.field_at(element_index).intensity()
+    def field_at(self, element: OpticalElement) -> Field:
+        try:
+            return self._element_to_step[id(element)].field_after
+        except KeyError:
+            raise ValueError(f"Element {element} not found in simulation.")
+
+    def intensity_at(self, element: OpticalElement) -> torch.Tensor:
+        try:
+            return self.field_at(element).intensity()
+        except KeyError:
+            raise ValueError(f"Element {element} not found in simulation.")
 
     def __iter__(self):
         return iter(self.steps)

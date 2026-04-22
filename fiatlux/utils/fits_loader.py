@@ -1,21 +1,17 @@
 from astropy.io import fits
+from pathlib import Path
 
 
-def load_pupil():
-    with fits.open("/Users/pjanin/Downloads/pupil.fits") as hdul:
+def load_pupil(filepath:Path):
+    with fits.open(filepath) as hdul:
         y0 = int(hdul[0].header["Y0"])
         x0 = int(hdul[0].header["X0"])
         r = int(hdul[0].header["R"])
         pupil = hdul[0].data[y0 - r : y0 + r, x0 - r : x0 + r]
-    return pupil
+    return pupil, (x0, y0, r)
 
 
-def load_zelda_measurement():
-    with fits.open("/Users/pjanin/Downloads/tip0.fits") as hdul:
-        y0 = int(hdul[0].header["Y0"])
-        x0 = int(hdul[0].header["X0"])
-        r = int(hdul[0].header["R"])
-        return (
-            hdul[0].data[1, y0 - r : y0 + r, x0 - r : x0 + r]
-            - hdul[0].data[0, y0 - r : y0 + r, x0 - r : x0 + r]
-        )
+def load_zelda_measurement(filepath:Path):
+    with fits.open(filepath) as hdul:
+        return hdul[0].data
+        
