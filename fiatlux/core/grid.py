@@ -4,8 +4,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 import torch
 
-from fiatlux.core.spectrum import Spectrum
-
 
 class BaseGrid(ABC):
 

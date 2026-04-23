@@ -2,7 +2,6 @@ from dataclasses import dataclass
 import torch
 
 from fiatlux.core.spectrum import Spectrum
-from fiatlux.optics.elements.mask import Mask
 
 
 @dataclass

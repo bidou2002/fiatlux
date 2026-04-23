@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from fiatlux.optics.elements.base import OpticalElement
 from fiatlux.core.field import Field
 from fiatlux.core.grid import Grid
 

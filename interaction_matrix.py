@@ -11,13 +11,13 @@ from fiatlux.optics.detector import Detector
 from fiatlux.optics.elements.deformable_mirror import (
     DeformableMirror,
     ActuatorGrid,
-    InteractionMatrix,
     GaussianZonalBasis,
     FourierBasis,
     SquareZonalBasis,
     SquarePTTZonalBasis,
     ZernikeBasis,
 )
+from fiatlux.system.interaction_matrix import InteractionMatrix
 from fiatlux.optics.adc import ADCDispersionModel
 
 import matplotlib.pyplot as plt
@@ -140,14 +140,14 @@ if __name__ == "__main__":
     empty_propagator1 = IdentityPropagator(pupil_grid)
 
     # Create aperture
-    aperture = CircularAperture(radius=D / 2)
+    aperture = CircularAperture(grid=pupil_grid, radius=D / 2)
 
     adc_model = ADCDispersionModel()
     amplitudes = adc_model.get_dispersion(angle=30, spectrum=spectrum)
     print(amplitudes / (lambda_max / D))
-    adc = ADC(amplitude=0 * amplitudes, angle=90)
+    adc = ADC(grid=pupil_grid, amplitude=0 * amplitudes, angle=90)
 
-    tip_tilt_compensator = TipTilt(tip=0, tilt=-amplitudes.max() / 2)
+    tip_tilt_compensator = TipTilt(grid=pupil_grid, tip=0, tilt=-amplitudes.max() / 2)
 
     n_modes = 100
 
@@ -179,6 +179,7 @@ if __name__ == "__main__":
 
     # DM
     dm = DeformableMirror(
+        grid=pupil_grid,
         actuator_grid=ActuatorGrid(n_actuators_x=10, n_actuators_y=10, pitch=D / 10),
         pixel_grid=pupil_grid,
         control_basis=basis,
@@ -191,8 +192,8 @@ if __name__ == "__main__":
 
     theta = torch.as_tensor(lambda_max / 4)
     # Define zelda mask
-    zelda_mask = ZeldaMask(radius=f * lambda_max / D, well_depth=theta)
-    zelda_stop = ZeldaStop(radius=f * lambda_max / D)
+    zelda_mask = ZeldaMask(grid=focal_grid, radius=f * lambda_max / D, well_depth=theta)
+    zelda_stop = ZeldaStop(grid=focal_grid, radius=f * lambda_max / D)
 
     detector = Detector(
         grid=pupil_grid,
@@ -203,8 +204,6 @@ if __name__ == "__main__":
     )
 
     system = SerialSystem(
-        source=source,
-        detector=detector,
         elements=[
             empty_propagator0,
             aperture,
@@ -218,18 +217,23 @@ if __name__ == "__main__":
         ],
     )
 
-    res = system.run()
+    res = system.run(source=source, detector=detector)
 
     plt.figure()
-    plt.imshow(torch.sum(res.field_at(6).intensity(), dim=0))
+    plt.imshow(torch.sum(res.field_at(zelda_stop).intensity(), dim=0))
     plt.show()
 
     im = InteractionMatrix(
         system=system,
         dm=dm,
+        source=source,
+        detector=detector,
         poke_amplitude=0.05,
-        response_function=lambda result: (result.field_at(5) - result.field_at(-1))
-        + torch.exp(1j * torch.as_tensor(torch.pi) / 2) * result.field_at(-1),
+        response_function=lambda result: (
+            result.field_at(dm) - result.field_at(empty_propagator1)
+        )
+        + torch.exp(1j * torch.as_tensor(torch.pi) / 2)
+        * result.field_at(empty_propagator1),
     )
     im.push_pull(verbose=True)
 

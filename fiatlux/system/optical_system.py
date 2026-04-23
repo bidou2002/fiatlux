@@ -1,11 +1,10 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from abc import ABC, abstractmethod
+
 
 import torch
 
 from fiatlux.core.field import Field
-from fiatlux.core.grid import Grid
 from fiatlux.optics.detector import Detector
 from fiatlux.core.source import Source
 from fiatlux.optics.propagator import Propagator

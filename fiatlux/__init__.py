@@ -1,6 +1,121 @@
-from . import core
-from . import optics
-from . import utils
-from . import system
+"""
+fiatlux — Optical propagation and simulation framework.
 
-__all__ = ["core", "optics", "utils", "system"]
+High-level API exposing the main simulation objects.
+
+Typical usage:
+    from fiatlux import Grid, Field, Source, Spectrum
+    from fiatlux import OpticalSystem
+"""
+
+# Version (optional but recommended)
+__version__ = "0.1.0"
+
+# =========================
+# Core physics objects
+# =========================
+
+from .core.grid import Grid
+from .core.field import Field
+from .core.source import Source, PlaneWave, GaussianSource
+from .core.spectrum import Spectrum, PhotometricBand
+
+# =========================
+# Optical system
+# =========================
+
+from .system.optical_system import SerialSystem
+from .system.interaction_matrix import InteractionMatrix
+
+# =========================
+# Optics (propagation etc.)
+# =========================
+
+from .optics.propagator import Propagator, IdentityPropagator, MFTPropagator
+from .optics.detector import Detector
+from .optics.adc import ADCDispersionModel
+
+# =========================
+# Optical elements
+# =========================
+
+from .optics.elements.base import OpticalElement
+from .optics.elements.deformable_mirror import (
+    DeformableMirror,
+    ActuatorGrid,
+    GaussianZonalBasis,
+    FourierBasis,
+    SquareZonalBasis,
+    SquarePTTZonalBasis,
+    ZernikeBasis,
+)
+from .optics.elements.field_stop import ShanonFieldStop
+from .optics.elements.mask import (
+    Mask,
+    CircularAperture,
+    ZeldaMask,
+    ZeldaStop,
+    ADC,
+    TipTilt,
+    Piston,
+)
+
+# =========================
+# Config system
+# =========================
+
+from .config.loader import from_json
+from .config.builder import build_serial_elements
+
+# =========================
+# Utilities
+# =========================
+
+from .utils.converter import *
+from .utils.fits_loader import *
+from .utils.resolution import *
+from .utils.zernike import *
+
+# =========================
+# Public API control
+# =========================
+
+__all__ = [
+    # Core
+    "Grid",
+    "Field",
+    "Source",
+    "PlaneWave",
+    "GaussianSource",
+    "Spectrum",
+    "PhotometricBand",
+    # System
+    "SerialSystem",
+    "InteractionMatrix",
+    # Optics
+    "Propagator",
+    "IdentityPropagator",
+    "MFTPropagator",
+    "Detector",
+    "ADCDispersionModel",
+    # Elements
+    "OpticalElement",
+    "DeformableMirror",
+    "ActuatorGrid",
+    "GaussianZonalBasis",
+    "FourierBasis",
+    "SquareZonalBasis",
+    "SquarePTTZonalBasis",
+    "ZernikeBasis",
+    "ShanonFieldStop",
+    "Mask",
+    "CircularAperture",
+    "ZeldaMask",
+    "ZeldaStop",
+    "ADC",
+    "TipTilt",
+    "Piston",
+    # Config
+    "from_json",
+    "build_serial_elements",
+]

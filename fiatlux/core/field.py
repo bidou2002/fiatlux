@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import torch
 
-from fiatlux.core.grid import BaseGrid, Grid
+from fiatlux.core.grid import BaseGrid
 from fiatlux.core.spectrum import Spectrum
 
 from typing import TYPE_CHECKING
