@@ -25,27 +25,18 @@ class InteractionMatrix:
 
     def __init__(
         self,
-        system: SerialSystem,
         dm: DeformableMirror,
-        source: Source,
-        detector: Detector,
         poke_amplitude: float = 0.1,  # in units of dm.stroke
-        response_function: Callable[[SimulationResult], Field] | None = None,
+        acquiring_function: Callable = lambda res: res.image,
     ):
-        self.system = system
         self.dm = dm
-        self.source = source
-        self.detector = detector
         self.poke_amplitude = poke_amplitude
-        self.response_function = response_function
+        self.acquiring_function = acquiring_function
         self.matrix: torch.Tensor | None = None  # (n_response, n_actuators)
 
     def _get_response(self) -> torch.Tensor:
         """Run the system and return the flattened response vector."""
-        result = self.system.run(source=self.source, detector=self.detector)
-        self.detector.acquire(self.response_function(result))
-
-        return self.detector.image_buffer.flatten()  # (nx*ny,)
+        return self.acquiring_function().flatten()
 
     def measure(self, verbose: bool = True) -> torch.Tensor:
         """

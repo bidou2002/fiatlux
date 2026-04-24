@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import json
 from config.serial_config import SystemConfig
+from functools import partial
 
 if __name__ == "__main__":
 
@@ -219,21 +220,26 @@ if __name__ == "__main__":
 
     res = system.run(source=source, detector=detector)
 
-    plt.figure()
-    plt.imshow(torch.sum(res.field_at(zelda_stop).intensity(), dim=0))
-    plt.show()
+    # plt.figure()
+    # plt.imshow(torch.sum(res.field_at(zelda_stop).intensity(), dim=0))
+    # plt.show()
+
+    def acquiring_function(system, source, detector) -> torch.Tensor:
+
+        result = system.run(source=source, detector=detector)
+        detector.acquire(
+            (result.field_at(dm) - result.field_at(empty_propagator1))
+            + torch.exp(1j * torch.as_tensor(torch.pi) / 2)
+            * result.field_at(empty_propagator1)
+        )
+        return detector.image_buffer.flatten()  # (nx*ny,)
 
     im = InteractionMatrix(
-        system=system,
         dm=dm,
-        source=source,
-        detector=detector,
         poke_amplitude=0.05,
-        response_function=lambda result: (
-            result.field_at(dm) - result.field_at(empty_propagator1)
-        )
-        + torch.exp(1j * torch.as_tensor(torch.pi) / 2)
-        * result.field_at(empty_propagator1),
+        acquiring_function=partial(
+            acquiring_function, system=system, source=source, detector=detector
+        ),
     )
     im.push_pull(verbose=True)
 
