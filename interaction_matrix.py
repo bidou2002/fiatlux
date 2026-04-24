@@ -150,7 +150,7 @@ if __name__ == "__main__":
 
     tip_tilt_compensator = TipTilt(grid=pupil_grid, tip=0, tilt=-amplitudes.max() / 2)
 
-    n_modes = 100
+    n_modes = 16
 
     # actuator_grid = ActuatorGrid(
     #     n_actuators_x=n_modes, n_actuators_y=n_modes, pitch=D / n_modes
@@ -243,39 +243,7 @@ if __name__ == "__main__":
     )
     im.push_pull(verbose=True)
 
-    U, S, Vh = torch.linalg.svd(im.matrix.to(torch.float32), full_matrices=False)
-    plt.figure()
-    plt.plot(S)
-    plt.yscale("log")
-    plt.xlabel("Mode index")
-    plt.ylabel("Singular value")
-    plt.title("Singular values of the interaction matrix")
-    plt.grid()
-    plt.draw()
-
-    N = 100
-    n = int((N**0.5))
-
-    fig, axes = plt.subplots(n, n, figsize=(10, 10))
-    fig_out, axes_out = plt.subplots(n, n, figsize=(10, 10))
-
-    for i in range(N):
-
-        ax = axes[i // n, i % n]
-        ax_out = axes_out[i // n, i % n]
-
-        mode = U[:, i].reshape(pupil_grid.nx, pupil_grid.ny)
-        mode_in = im.matrix[:, i].reshape(pupil_grid.nx, pupil_grid.ny)
-
-        ax.imshow(mode_in)
-        ax.set_title(f"Mode {i}")
-        ax.axis("off")
-
-        ax_out.imshow(mode)
-        ax_out.set_title(f"Mode {i}")
-        ax_out.axis("off")
-
-    plt.tight_layout()
-    plt.draw()
+    im.compute_control_matrix()
+    im.plot()
 
     plt.show()

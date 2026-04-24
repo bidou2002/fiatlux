@@ -3,6 +3,8 @@ from abc import ABC, abstractmethod
 import torch
 from typing import Callable
 
+import matplotlib.pyplot as plt
+
 from fiatlux.core.source import Source
 from fiatlux.optics.detector import Detector
 from fiatlux.core.field import Field
@@ -113,7 +115,7 @@ class InteractionMatrix:
 
         return self.matrix
 
-    def control_matrix(self, n_modes: int = None) -> torch.Tensor:
+    def compute_control_matrix(self, n_modes: int = None):
         """
         Computes the pseudo-inverse (control matrix) via SVD.
         n_modes : number of singular modes to keep (truncated SVD).
@@ -122,9 +124,51 @@ class InteractionMatrix:
         if self.matrix is None:
             raise RuntimeError("Call measure() or push_pull() first.")
 
-        U, S, Vh = torch.linalg.svd(self.matrix, full_matrices=False)
+        self.U, self.S, self.Vh = torch.linalg.svd(self.matrix, full_matrices=False)
 
         if n_modes is not None:
-            U, S, Vh = U[:, :n_modes], S[:n_modes], Vh[:n_modes, :]
+            self.U, self.S, self.Vh = (
+                self.U[:, :n_modes],
+                self.S[:n_modes],
+                self.Vh[:n_modes, :],
+            )
 
-        return Vh.T @ torch.diag(1.0 / S) @ U.T  # (n_actuators, n_response)
+        self.control_matrix = (
+            self.Vh.T @ torch.diag(1.0 / self.S) @ self.U.T
+        )  # (n_actuators, n_response)
+
+    def plot(self):
+
+        plt.figure()
+        plt.plot(self.S)
+        plt.yscale("log")
+        plt.xlabel("Mode index")
+        plt.ylabel("Singular value")
+        plt.title("Singular values of the interaction matrix")
+        plt.grid()
+        plt.draw()
+
+        N = self.dm._commands.numel()
+        n = int((N**0.5))
+
+        fig, axes = plt.subplots(n, n, figsize=(10, 10))
+        fig_out, axes_out = plt.subplots(n, n, figsize=(10, 10))
+
+        for i in range(N):
+
+            ax = axes[i // n, i % n]
+            ax_out = axes_out[i // n, i % n]
+
+            mode = self.U[:, i].reshape(self.dm.grid.nx, self.dm.grid.ny)
+            mode_in = self.matrix[:, i].reshape(self.dm.grid.nx, self.dm.grid.ny)
+
+            ax.imshow(mode_in)
+            ax.set_title(f"Mode {i}")
+            ax.axis("off")
+
+            ax_out.imshow(mode)
+            ax_out.set_title(f"Mode {i}")
+            ax_out.axis("off")
+
+        plt.tight_layout()
+        plt.draw()
