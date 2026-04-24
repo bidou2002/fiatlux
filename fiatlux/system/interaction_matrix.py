@@ -113,7 +113,7 @@ class InteractionMatrix:
 
         return self.matrix
 
-    def control_matrix(self, n_modes: int | None = None) -> torch.Tensor:
+    def control_matrix(self, n_modes: int = None) -> torch.Tensor:
         """
         Computes the pseudo-inverse (control matrix) via SVD.
         n_modes : number of singular modes to keep (truncated SVD).
