@@ -24,7 +24,7 @@ from .core.spectrum import Spectrum, PhotometricBand
 # Optical system
 # =========================
 
-from .system.optical_system import SerialSystem
+from .system.optical_system import SerialSystem, SimulationResult
 from .system.interaction_matrix import InteractionMatrix
 
 # =========================
@@ -53,6 +53,7 @@ from .optics.elements.field_stop import ShanonFieldStop
 from .optics.elements.mask import (
     Mask,
     CircularAperture,
+    ArbitraryAperture,
     ZeldaMask,
     ZeldaStop,
     ADC,
@@ -91,6 +92,7 @@ __all__ = [
     "PhotometricBand",
     # System
     "SerialSystem",
+    "SimulationResult",
     "InteractionMatrix",
     # Optics
     "Propagator",
@@ -110,6 +112,7 @@ __all__ = [
     "ShanonFieldStop",
     "Mask",
     "CircularAperture",
+    "ArbitraryAperture",
     "ZeldaMask",
     "ZeldaStop",
     "ADC",

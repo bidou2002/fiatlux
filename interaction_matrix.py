@@ -19,12 +19,14 @@ from fiatlux.optics.elements.deformable_mirror import (
 )
 from fiatlux.system.interaction_matrix import InteractionMatrix
 from fiatlux.optics.adc import ADCDispersionModel
+from fiatlux.system.optical_system import SimulationResult
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import json
 from config.serial_config import SystemConfig
 from functools import partial
+
 
 if __name__ == "__main__":
 
@@ -114,7 +116,7 @@ if __name__ == "__main__":
     # # print(res)
 
     # Define source spectrum
-    spectrum = Spectrum.from_sampling(magnitude=18, band=PhotometricBand.HCM2, Nu=512)
+    spectrum = Spectrum.from_sampling(magnitude=14, band=PhotometricBand.HCM2, Nu=512)
 
     # System parameters
     f = 0.125
@@ -198,7 +200,7 @@ if __name__ == "__main__":
 
     detector = Detector(
         grid=pupil_grid,
-        photon_noise=False,
+        photon_noise=True,
         readout_noise_variance=0,
         dark_current=0,
         offset=0,
@@ -224,9 +226,11 @@ if __name__ == "__main__":
     # plt.imshow(torch.sum(res.field_at(zelda_stop).intensity(), dim=0))
     # plt.show()
 
-    def acquiring_function(system, source, detector) -> torch.Tensor:
+    def acquiring_function(
+        system: SerialSystem, source: Source, detector: Detector
+    ) -> torch.Tensor:
 
-        result = system.run(source=source, detector=detector)
+        result: SimulationResult = system.run(source=source, detector=detector)
         detector.acquire(
             (result.field_at(dm) - result.field_at(empty_propagator1))
             + torch.exp(1j * torch.as_tensor(torch.pi) / 2)

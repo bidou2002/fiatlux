@@ -20,7 +20,6 @@ from fiatlux.optics.detector import Detector
 from fiatlux.optics.elements.deformable_mirror import (
     DeformableMirror,
     ActuatorGrid,
-    InteractionMatrix,
     GaussianZonalBasis,
     FourierBasis,
     SquareZonalBasis,
@@ -68,9 +67,11 @@ if __name__ == "__main__":
     empty_propagator1 = IdentityPropagator(pupil_grid)
 
     # Create aperture
-    aperture = ArbitraryAperture(torch.as_tensor(pupil_mask))
+    aperture = ArbitraryAperture(
+        grid=pupil_grid, transmission=torch.as_tensor(pupil_mask)
+    )
 
-    step = Step(lambda_max / 4)
+    step = Step(grid=pupil_grid, piston=lambda_max / 4)
 
     # Define propagator
     mft0 = MFTPropagator(focal_length=f, output_grid=focal_grid)
@@ -78,7 +79,7 @@ if __name__ == "__main__":
 
     theta = torch.as_tensor(lambda_max / 4)
     # Define zelda mask
-    zelda_stop = ZeldaStop(radius=1.06 * f * lambda_max / D)
+    zelda_stop = ZeldaStop(grid=focal_grid, radius=1.06 * f * lambda_max / D)
 
     detector = Detector(
         grid=pupil_grid,
@@ -102,8 +103,9 @@ if __name__ == "__main__":
 
     def response_function(result):
         detector.acquire(
-            (result.field_at(-5) - result.field_at(-1))
-            + torch.exp(1j * torch.as_tensor(torch.pi) / 2) * result.field_at(-1)
+            (result.field_at(step) - result.field_at(empty_propagator1))
+            + torch.exp(1j * torch.as_tensor(torch.pi) / 2)
+            * result.field_at(empty_propagator1)
         )
         return detector.image_buffer
 
@@ -132,7 +134,7 @@ if __name__ == "__main__":
 
     for i, opd in enumerate(torch.linspace(0, lambda_max, 256)):
         step.piston = opd
-        step.build(grid=pupil_grid, spectrum=spectrum)
+        step.build(spectrum=spectrum)
         res = system.run(source=source)
 
         image = response_function(res)
