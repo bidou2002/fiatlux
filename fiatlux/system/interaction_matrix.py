@@ -154,13 +154,15 @@ class InteractionMatrix:
         fig, axes = plt.subplots(n, n, figsize=(10, 10))
         fig_out, axes_out = plt.subplots(n, n, figsize=(10, 10))
 
+        n_reshape = int(self.control_matrix.shape[1] ** 0.5)
+
         for i in range(N):
 
             ax = axes[i // n, i % n]
             ax_out = axes_out[i // n, i % n]
 
-            mode = self.U[:, i].reshape(self.dm.grid.nx, self.dm.grid.ny)
-            mode_in = self.matrix[:, i].reshape(self.dm.grid.nx, self.dm.grid.ny)
+            mode = self.U[:, i].reshape(n_reshape, n_reshape)
+            mode_in = self.matrix[:, i].reshape(n_reshape, n_reshape)
 
             ax.imshow(mode_in)
             ax.set_title(f"Mode {i}")
