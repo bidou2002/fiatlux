@@ -109,7 +109,7 @@ def zernike(
     if not torch.all(torch.asarray(rho.shape == theta.shape)):
         raise ValueError("The rho and theta arrays do not have consistent shape.")
 
-    aperture = rho <= 1
+    aperture = (rho <= 1).to(torch.float64)
 
     if m == 0:
         if n == 0:
@@ -143,7 +143,7 @@ def zernike(
         )
 
     zernike_result[(rho > 1)] = outside
-    return zernike_result / (zernike_result**2).sum().sqrt()
+    return zernike_result / torch.var(zernike_result**2) ** 0.5
 
 
 def noll_indices(j):
