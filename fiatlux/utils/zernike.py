@@ -143,7 +143,7 @@ def zernike(
         )
 
     zernike_result[(rho > 1)] = outside
-    return zernike_result / torch.var(zernike_result**2) ** 0.5
+    return zernike_result / torch.var(zernike_result[rho <= 1] ** 2) ** 0.5
 
 
 def noll_indices(j):
