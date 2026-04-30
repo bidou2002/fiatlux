@@ -125,8 +125,14 @@ def main():
 
     interaction_matrix.plot()
 
-    torch.manual_seed(0)
-    dm_atm._commands = torch.rand_like(dm_atm._commands) * 0.05
+    torch.manual_seed(1)
+    Iref = (
+        acquiring_function(system, source, detector)
+        .reshape(pupil_grid.nx, pupil_grid.ny)
+        .flatten()
+    )
+
+    dm_atm._commands = torch.rand_like(dm_atm._commands) * 0.1
     dm._commands = torch.zeros_like(dm._commands)
     gain = 0.5
     fig, ax = plt.subplots(1, 3)
@@ -141,7 +147,8 @@ def main():
         # Measure current response
         response = acquiring_function(system, source, detector)
         # Compute correction
-        correction = interaction_matrix.control_matrix @ response
+        correction = interaction_matrix.control_matrix @ (response - Iref)
+
         # Apply correction
         dm._commands -= gain * correction
 

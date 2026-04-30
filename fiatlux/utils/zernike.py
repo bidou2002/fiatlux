@@ -143,7 +143,7 @@ def zernike(
         )
 
     zernike_result[(rho > 1)] = outside
-    return zernike_result
+    return zernike_result / (zernike_result**2).sum().sqrt()
 
 
 def noll_indices(j):
