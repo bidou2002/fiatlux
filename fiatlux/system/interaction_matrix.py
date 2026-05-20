@@ -149,7 +149,7 @@ class InteractionMatrix:
         plt.draw()
 
         N = self.dm._commands.numel()
-        n = int((N**0.5))
+        n = torch.tensor(N**0.5).ceil().int().item()
 
         fig, axes = plt.subplots(n, n, figsize=(10, 10))
         fig_out, axes_out = plt.subplots(n, n, figsize=(10, 10))

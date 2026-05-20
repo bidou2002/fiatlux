@@ -8,6 +8,7 @@ from fiatlux.optics.elements.base import OpticalElement
 from fiatlux.core.grid import Grid
 from fiatlux.core.field import Field
 from fiatlux.core.spectrum import Spectrum
+from fiatlux.optics.atmosphere import AtmosphereModel
 
 from fiatlux.config.registry import register_type
 
@@ -203,4 +204,24 @@ class ADC(Mask):
         self.opd = self.amplitude[:, None, None] * (
             x * torch.cos(torch.deg2rad(torch.as_tensor(self.angle)))
             + y * torch.sin(torch.deg2rad(torch.as_tensor(self.angle)))
+        )
+
+
+class Atmosphere(Mask):
+    def __init__(self, grid: Grid, atmosphere_model: AtmosphereModel):
+        self.atmosphere_model = atmosphere_model
+        super().__init__(grid=grid)
+
+    def _build_transmission(self) -> None:
+        self.transmission = torch.ones((self.grid.ny, self.grid.nx))
+
+    def _build_opd(self) -> None:
+        cn = (
+            torch.randn(*self.atmosphere_model.psd.shape)
+            + 1j * torch.randn(*self.atmosphere_model.psd.shape)
+        ) * torch.sqrt(self.atmosphere_model.psd)
+
+        self.opd = torch.real(
+            torch.fft.ifftshift(torch.fft.ifft2(torch.fft.fftshift(cn)))
+            * self.atmosphere_model.psd.numel()
         )

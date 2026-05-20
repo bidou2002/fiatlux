@@ -4,6 +4,10 @@ from dataclasses import dataclass
 
 import torch
 
+import matplotlib.pyplot as plt
+
+import math
+
 from fiatlux.core.field import Field
 from fiatlux.optics.detector import Detector
 from fiatlux.core.source import Source
@@ -93,3 +97,11 @@ class SimulationResult:
 
     def __iter__(self):
         return iter(self.steps)
+
+    def plot(self):
+        n = math.ceil(len(self.steps) ** 0.5)
+        print(n)
+        fig, axs = plt.subplots(n, n)
+        for i, step in enumerate(self.steps):
+            axs[i // n, i % n].imshow(step.field_after.intensity()[0])
+            axs[i // n, i % n].set_title(f"{step.element.__str__()[:10]}")

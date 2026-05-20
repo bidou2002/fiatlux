@@ -34,6 +34,7 @@ from .system.interaction_matrix import InteractionMatrix
 from .optics.propagator import Propagator, IdentityPropagator, MFTPropagator
 from .optics.detector import Detector
 from .optics.adc import ADCDispersionModel
+from .optics.atmosphere import AtmosphereModel
 
 # =========================
 # Optical elements
@@ -57,6 +58,7 @@ from .optics.elements.mask import (
     ZeldaMask,
     ZeldaStop,
     ADC,
+    Atmosphere,
     TipTilt,
     Piston,
 )
@@ -100,6 +102,7 @@ __all__ = [
     "MFTPropagator",
     "Detector",
     "ADCDispersionModel",
+    "AtmosphereModel",
     # Elements
     "OpticalElement",
     "DeformableMirror",
@@ -116,6 +119,7 @@ __all__ = [
     "ZeldaMask",
     "ZeldaStop",
     "ADC",
+    "Atmosphere",
     "TipTilt",
     "Piston",
     # Config

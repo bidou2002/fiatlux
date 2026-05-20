@@ -7,6 +7,7 @@ from fiatlux.core.grid import Grid
 from fiatlux.core.field import Field
 from fiatlux.core.spectrum import Spectrum
 from fiatlux.utils.zernike import zernike_basis
+from fiatlux.optics.elements.mask import Mask
 
 from fiatlux.config.registry import register_type
 
@@ -175,39 +176,83 @@ class SquarePTTZonalBasis(ControlBasis):
 @register_type("FourierBasis")
 class FourierBasis(ControlBasis):
     pixel_grid: Grid
-    order: int
+    frequencies: torch.Tensor  # spatial frequencies in cycles per aperture
+    pupil: Mask
 
-    def build_command_matrix(
-        self,
-    ) -> torch.Tensor:
+    def build_command_matrix(self):
+        n_freqs = len(self.frequencies)
 
+        # Pixel coordinate grids  (resolution, resolution)
         x, y = self.pixel_grid.meshgrid()  # (nx, ny)
-        fx = fy = torch.arange(self.order)
 
-        D = self.pixel_grid.nx * self.pixel_grid.dx
-        scale = 2 * torch.pi / D
+        # All (freq_x, freq_y) pairs  →  (n_freqs, n_freqs)
+        freq_x = self.frequencies[:, None].expand(n_freqs, n_freqs)
+        freq_y = self.frequencies[None, :].expand(n_freqs, n_freqs)
 
-        # Build all (fx, fy) pairs
-        FX, FY = torch.meshgrid(fx, fy, indexing="ij")
+        # Phase for every pair and every pixel  →  (n_freqs, n_freqs, resolution, resolution)
+        phase = (
+            2 * torch.pi * (freq_x[:, :, None, None] * x + freq_y[:, :, None, None] * y)
+        )
 
-        FX = FX.flatten()
-        FY = FY.flatten()
+        # Cosine for freq_x < 0, or freq_x == 0 and freq_y <= 0 (avoids cos/sin redundancy)
+        # use_cosine = (freq_x < 0) | ((freq_x <= 0) & (freq_y >= 0))
+        use_cosine = torch.full((n_freqs, n_freqs), True)
+        center_freq = n_freqs**2 / 2
+        use_cosine[: int(center_freq // n_freqs), :] = False
+        use_cosine[int(center_freq // n_freqs), : int(center_freq % n_freqs)] = False
 
-        arg = scale * (FX[:, None, None] * x + FY[:, None, None] * y)
+        import matplotlib.pyplot as plt
 
-        cos_modes = (torch.cos(arg) + 1) / 2
-        sin_modes = (torch.sin(arg) + 1) / 2
+        fig, ax = plt.subplots()
+        ax.imshow(use_cosine)
+        # Minor ticks
+        ax.set_xticks(torch.arange(-0.5, n_freqs, 1), minor=True)
+        ax.set_yticks(torch.arange(-0.5, n_freqs, 1), minor=True)
+        # Gridlines based on minor ticks
+        ax.grid(which="minor", color="w", linestyle="-", linewidth=2)
 
-        modes = torch.cat([cos_modes, sin_modes], dim=0)
-        modes = modes.flatten(start_dim=1).T
-        mask = torch.ones(2 * len(fx) ** 2, dtype=torch.bool)
-        mask[0] = False
-        mask[len(fx) ** 2] = False
+        modes = torch.where(
+            use_cosine[:, :, None, None], torch.cos(phase), torch.sin(phase)
+        )
 
-        return modes[:, mask]
+        modes = (modes * self.pupil.transmission[None, None, ...]) / (
+            modes * self.pupil.transmission[None, None, ...]
+        ).pow(2).sum(dim=(2, 3), keepdim=True).sqrt()
+
+        return modes.reshape(n_freqs**2, self.pixel_grid.nx * self.pixel_grid.ny).T
+
+    # def build_command_matrix(
+    #     self,
+    # ) -> torch.Tensor:
+
+    #     x, y = self.pixel_grid.meshgrid()  # (nx, ny)
+    #     fx = fy = torch.arange(self.order)
+    #     fx = fy = torch.arange(self.order) - self.order // 2
+
+    #     D = self.pixel_grid.nx * self.pixel_grid.dx
+    #     scale = 2 * torch.pi / D
+
+    #     # Build all (fx, fy) pairs
+    #     FX, FY = torch.meshgrid(fx, fy, indexing="ij")
+
+    #     FX = FX.flatten()
+    #     FY = FY.flatten()
+
+    #     arg = scale * (FX[:, None, None] * x + FY[:, None, None] * y)
+
+    #     cos_modes = (torch.cos(arg) + 1) / 2
+    #     sin_modes = (torch.sin(arg) + 1) / 2
+
+    #     modes = torch.cat([cos_modes, sin_modes], dim=0)
+    #     modes = modes.flatten(start_dim=1).T
+    #     mask = torch.ones(2 * len(fx) ** 2, dtype=torch.bool)
+    #     mask[0] = False
+    #     mask[len(fx) ** 2] = False
+
+    #     return modes[:, mask]
 
     def n_modes(self):
-        return 2 * (self.order**2 - 1)
+        return len(self.frequencies) ** 2
 
 
 @dataclass
