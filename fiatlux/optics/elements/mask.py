@@ -185,6 +185,35 @@ class TipTilt(Mask):
         self.opd = self.tip * x + self.tilt * y
 
 
+class ProuhetThueMorse(Mask):
+
+    def __init__(self, grid: Grid):
+        super().__init__(grid=grid)
+
+    def parity_popcount(self, x):
+        p = torch.zeros_like(x)
+
+        while x.any():
+            p ^= x & 1
+            x >>= 1
+
+        return p
+
+    def _build_transmission(self) -> None:
+        self.transmission = torch.ones((self.grid.ny, self.grid.nx))
+
+    def _build_opd(self) -> None:
+        x = torch.arange(self.grid.nx)
+        y = torch.arange(self.grid.ny)
+
+        X, Y = torch.meshgrid(x, y, indexing="ij")
+
+        # XOR-based 2D PTM
+        Z = X ^ Y
+
+        self.opd = 600e-9 * self.parity_popcount(Z).float()
+
+
 @register_type("ADC")
 class ADC(Mask):
 
