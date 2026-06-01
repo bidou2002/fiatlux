@@ -88,6 +88,7 @@ class InteractionMatrix:
 
         saved_commands = self.dm.commands.data.clone()
         self.dm.flatten()
+        zeros_commands = self.dm.commands
 
         with torch.no_grad():
             for i in range(n_actuators):
@@ -95,17 +96,20 @@ class InteractionMatrix:
                     print(f"Push-pull actuator {i+1}/{n_actuators}", end="\r")
 
                 # Push
-                self.dm.commands.data[i] = +self.poke_amplitude
+                zeros_commands[i] = +self.poke_amplitude
+                self.dm.commands = zeros_commands
                 r_plus = self._get_response()
 
                 # Pull
-                self.dm.commands.data[i] = -self.poke_amplitude
+                zeros_commands[i] = -self.poke_amplitude
+                self.dm.commands = zeros_commands
                 r_minus = self._get_response()
 
                 # Differential response
                 columns.append((r_plus - r_minus) / (2 * self.poke_amplitude))
 
-                self.dm.commands.data[i] = 0.0
+                zeros_commands[i] = 0.0
+                self.dm.commands = zeros_commands
 
         self.dm.commands.data.copy_(saved_commands)
         self.matrix = torch.stack(columns, dim=1)  # (n_response, n_actuators)
