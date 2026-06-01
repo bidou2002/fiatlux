@@ -314,7 +314,7 @@ class DeformableMirror(torch.nn.Module):
         """Actuator commands ∈ [-1, 1]."""
         return self._commands
 
-    @property.setter
+    @commands.setter
     def commands(self, value: torch.Tensor):
         self._commands = value
 
