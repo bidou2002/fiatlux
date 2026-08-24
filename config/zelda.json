@@ -1,0 +1,71 @@
+{
+    "source": {
+        "spectrum": {
+            "magnitude": 9,
+            "band": "HCM",
+            "Nu": 512
+        }
+    },
+    "pupil_grid": {
+        "nx": 209,
+        "ny": 209,
+        "dx": 0.324,
+        "dy": 0.324
+    },
+    "focal_grid": {
+        "nx": 512,
+        "ny": 512,
+        "dx": 0.0004,
+        "dy": 0.0004
+    },
+    "serial_elements": {
+        "CircularAperture": {
+            "radius": 0.5
+        },
+        "TipTilt": {
+            "tip": 0,
+            "tilt": 0
+        },
+        "DeformableMirror_0": {
+            "actuator_grid": {
+                "n_actuators_x": 10,
+                "n_actuators_y": 10,
+                "pitch": 3.85
+            },
+            "pixel_grid": "pupil_grid",
+            "control_basis": {
+                "zernike_basis": {
+                    "pixel_grid": "pupil_grid",
+                    "n_modes": 3
+                }
+            },
+            "stroke": "source.spectrum.wavelength.max()"
+        },
+        "DeformableMirror_1": {
+            "ActuatorGrid": {
+                "n_actuators_x": 10,
+                "n_actuators_y": 10,
+                "pitch": 3.85
+            },
+            "pixel_grid": "pupil_grid",
+            "ControlBasis": {
+                "zernike_basis": {
+                    "pixel_grid": "pupil_grid",
+                    "n_modes": 100
+                }
+            },
+            "stroke": "source.spectrum.wavelength.max()"
+        },
+        "mft_0": {
+            "focal_length": 0.125,
+            "output_grid": "focal_grid"
+        },
+        "zelda_stop": {
+            "radius": "mtf_0.focal_length * source.spectrum.wavelength.max() / (2 * circular_aperture.radius)"
+        },
+        "mft_1": {
+            "focal_length": 0.125,
+            "output_grid": "pupil_grid"
+        }
+    }
+}
