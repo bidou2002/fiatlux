@@ -8,9 +8,16 @@ from fiatlux.optics.elements.base import OpticalElement
 from fiatlux.core.grid import Grid
 from fiatlux.core.field import Field
 from fiatlux.core.spectrum import Spectrum
-from fiatlux.optics.atmosphere import AtmosphereModel
+from fiatlux.optics.atmosphere import AtmosphereModel, NCPAModel
 
 from fiatlux.config.registry import register_type
+
+import os
+
+from itertools import cycle
+
+from astropy.io import fits
+import torchvision.transforms as transforms
 
 
 @dataclass
@@ -25,7 +32,7 @@ class Mask(OpticalElement, ABC):
     transmission: torch.Tensor | None = None
     opd: torch.Tensor | None = None
     complex_transmission: torch.Tensor | None = None
-    recompute = False
+    recompute: bool = False
 
     @abstractmethod
     def _build_transmission(self) -> None: ...
@@ -237,9 +244,14 @@ class ADC(Mask):
 
 
 class Atmosphere(Mask):
-    def __init__(self, grid: Grid, atmosphere_model: AtmosphereModel):
+    def __init__(
+        self,
+        grid: Grid,
+        atmosphere_model: AtmosphereModel,
+        recompute: bool = True,
+    ):
         self.atmosphere_model = atmosphere_model
-        super().__init__(grid=grid)
+        super().__init__(grid=grid, recompute=recompute)
 
     def _build_transmission(self) -> None:
         self.transmission = torch.ones((self.grid.ny, self.grid.nx))
@@ -252,5 +264,92 @@ class Atmosphere(Mask):
 
         self.opd = torch.real(
             torch.fft.ifftshift(torch.fft.ifft2(torch.fft.fftshift(cn)))
-            * self.atmosphere_model.psd.numel()
+            * 1
+            / (self.grid.nx * self.grid.dx)
         )
+
+
+class NCPA(Mask):
+    def __init__(
+        self,
+        grid: Grid,
+        ncpa_model: NCPAModel,
+        amplitude: float,
+        recompute: bool = True,
+    ):
+        self.ncpa_model = ncpa_model
+        self.amplitude = amplitude
+        super().__init__(grid=grid, recompute=recompute)
+
+    def _build_transmission(self) -> None:
+        self.transmission = torch.ones((self.grid.ny, self.grid.nx))
+
+    def _build_opd(self) -> None:
+        cn = (
+            torch.randn(*self.ncpa_model.psd.shape)
+            + 1j * torch.randn(*self.ncpa_model.psd.shape)
+        ) * torch.sqrt(self.ncpa_model.psd)
+
+        self.opd = torch.real(
+            torch.fft.ifftshift(torch.fft.ifft2(torch.fft.fftshift(cn)))
+            * 1
+            / (self.grid.nx * self.grid.dx)
+        )
+
+        self.opd *= self.amplitude / self.opd.std()
+
+
+class Random(Mask):
+    def __init__(
+        self,
+        grid: Grid,
+        amplitude: float,
+        recompute: bool = True,
+    ):
+        self.amplitude = amplitude
+        super().__init__(grid=grid, recompute=recompute)
+
+    def _build_transmission(self) -> None:
+        self.transmission = torch.ones((self.grid.ny, self.grid.nx))
+
+    def _build_opd(self) -> None:
+        self.opd = self.amplitude * torch.randn((self.grid.ny, self.grid.nx))
+
+
+class HarmoniResiduals(Mask):
+    def __init__(self, grid: Grid):
+        self.grid = grid
+        self.load_datacube(
+            path="/Users/janinpop/Documents/code/use_fiatlux/data/harmoni_residuals"
+        )
+
+        r = 1009
+        N = len(self.datacube)
+        idx = torch.arange(N).repeat(r)
+        idx = idx[torch.randperm(idx.numel())]
+        self.iterator = iter(cycle(idx.tolist()))
+
+        super().__init__(grid=grid, recompute=True)
+
+    def load_datacube(self, path: str) -> None:
+        datacube = []
+        for file in os.listdir(path):
+            if file.endswith(".fits"):
+                hdul = fits.open(os.path.join(path, file))
+                arr = hdul[0].data[1, ...]
+                datacube.append(
+                    torch.rot90(
+                        torch.tensor(
+                            arr.astype(arr.dtype.newbyteorder("="), copy=True)
+                        ),
+                        dims=[1, 2],
+                    ).to(torch.float)
+                    / 2
+                )
+        self.datacube = torch.cat(datacube, dim=0)
+
+    def _build_transmission(self) -> None:
+        self.transmission = torch.ones((self.grid.ny, self.grid.nx))
+
+    def _build_opd(self) -> None:
+        self.opd = self.datacube[next(self.iterator), ...]

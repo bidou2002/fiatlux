@@ -6,6 +6,8 @@ from .propagator import Propagator
 __all__ = [
     "ADCDispersionModel",
     "AtmosphereModel",
+    "KolmogorovAtmosphereModel",
+    "NCPAModel",
     "Detector",
     "Propagator",
 ]

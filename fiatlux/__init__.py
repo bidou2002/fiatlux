@@ -34,7 +34,7 @@ from .system.interaction_matrix import InteractionMatrix
 from .optics.propagator import Propagator, IdentityPropagator, MFTPropagator
 from .optics.detector import Detector
 from .optics.adc import ADCDispersionModel
-from .optics.atmosphere import AtmosphereModel
+from .optics.atmosphere import AtmosphereModel, KolmogorovAtmosphereModel, NCPAModel
 
 # =========================
 # Optical elements
@@ -59,8 +59,11 @@ from .optics.elements.mask import (
     ZeldaStop,
     ADC,
     Atmosphere,
+    NCPA,
+    Random,
     TipTilt,
     Piston,
+    HarmoniResiduals,
 )
 
 # =========================
@@ -103,6 +106,8 @@ __all__ = [
     "Detector",
     "ADCDispersionModel",
     "AtmosphereModel",
+    "KolmogorovAtmosphereModel",
+    "NCPAModel",
     # Elements
     "OpticalElement",
     "DeformableMirror",
@@ -120,8 +125,11 @@ __all__ = [
     "ZeldaStop",
     "ADC",
     "Atmosphere",
+    "NCPA",
+    "Random",
     "TipTilt",
     "Piston",
+    "HarmoniResiduals",
     # Config
     "from_json",
     "build_serial_elements",
