@@ -1,6 +1,7 @@
 # field.py
 from __future__ import annotations
 from dataclasses import dataclass
+from numbers import Number
 import torch
 
 from fiatlux.core.grid import BaseGrid
@@ -30,24 +31,74 @@ class Field:
     # def is_frequency(self) -> bool:
     #     return isinstance(self.grid, FrequencyGrid)
 
-    def to(self, device: torch.device) -> Field:
-        return Field(self.amplitude.to(device), self.grid.to(device), self.wavelength)
+    def to(self, device: torch.device | str) -> Field:
+        """Return a new field with all tensor state moved to ``device``.
 
-    def __rmul__(self, tensor: torch.Tensor) -> Field:
-        return Field(tensor * self.complex_amplitude, self.grid, self.spectrum)
-
-    def __sub__(self, tensor: torch.Tensor) -> Field:
-        return Field(self.complex_amplitude - tensor, self.grid, self.spectrum)
-
-    def __sub__(self, field: Field) -> Field:
+        The complex-amplitude, wavelength and flux dtypes are preserved.
+        Neither this field nor its associated grid and spectrum are mutated.
+        """
+        device = torch.device(device)
         return Field(
-            self.complex_amplitude - field.complex_amplitude, self.grid, self.spectrum
+            self.complex_amplitude.to(device),
+            self.grid.to(device),
+            self.spectrum.to(device),
         )
 
-    def __add__(self, field: Field) -> Field:
-        return Field(
-            self.complex_amplitude + field.complex_amplitude, self.grid, self.spectrum
-        )
+    def _validate_compatible_field(self, other: Field) -> None:
+        if self.grid != other.grid:
+            raise ValueError("Field grids must be identical for arithmetic.")
+        if self.complex_amplitude.shape != other.complex_amplitude.shape:
+            raise ValueError(
+                "Field amplitudes must have identical shapes for arithmetic."
+            )
+        for name in ("wavelengths", "fluxes"):
+            left = getattr(self.spectrum, name)
+            right = getattr(other.spectrum, name)
+            if (
+                left.shape != right.shape
+                or left.device != right.device
+                or left.dtype != right.dtype
+                or not torch.equal(left, right)
+            ):
+                raise ValueError(
+                    f"Field spectra must have identical {name} for arithmetic."
+                )
+
+    def _operand(self, other: Field | torch.Tensor | Number):
+        if isinstance(other, Field):
+            self._validate_compatible_field(other)
+            return other.complex_amplitude
+        if isinstance(other, (torch.Tensor, Number)):
+            return other
+        return NotImplemented
+
+    def __add__(self, other: Field | torch.Tensor | Number) -> Field:
+        operand = self._operand(other)
+        if operand is NotImplemented:
+            return NotImplemented
+        return Field(self.complex_amplitude + operand, self.grid, self.spectrum)
+
+    def __radd__(self, other: torch.Tensor | Number) -> Field:
+        return self + other
+
+    def __sub__(self, other: Field | torch.Tensor | Number) -> Field:
+        operand = self._operand(other)
+        if operand is NotImplemented:
+            return NotImplemented
+        return Field(self.complex_amplitude - operand, self.grid, self.spectrum)
+
+    def __rsub__(self, other: torch.Tensor | Number) -> Field:
+        if not isinstance(other, (torch.Tensor, Number)):
+            return NotImplemented
+        return Field(other - self.complex_amplitude, self.grid, self.spectrum)
+
+    def __mul__(self, other: torch.Tensor | Number) -> Field:
+        if not isinstance(other, (torch.Tensor, Number)):
+            return NotImplemented
+        return Field(self.complex_amplitude * other, self.grid, self.spectrum)
+
+    def __rmul__(self, other: torch.Tensor | Number) -> Field:
+        return self * other
 
     def plot(self, wavelength_index: int = -1):
         import matplotlib.pyplot as plt
