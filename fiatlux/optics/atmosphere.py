@@ -35,7 +35,7 @@ class AtmosphereModel(ABC):
         *,
         reference_wavelength: float,
         seed: int | None = None,
-        dtype: torch.dtype = torch.float64,
+        dtype: torch.dtype = torch.float32,
     ) -> None:
         if grid.nx < 2 or grid.ny < 2:
             raise ValueError("Atmospheric grids require nx >= 2 and ny >= 2.")
@@ -165,7 +165,7 @@ class KolmogorovAtmosphereModel(AtmosphereModel):
         *,
         outer_scale: float | None = None,
         seed: int | None = None,
-        dtype: torch.dtype = torch.float64,
+        dtype: torch.dtype = torch.float32,
     ) -> None:
         if r0 <= 0:
             raise ValueError("r0 must be positive.")
