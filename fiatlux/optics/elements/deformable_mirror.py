@@ -375,11 +375,16 @@ class DeformableMirror(torch.nn.Module):
         )
 
     def to_slm(self, slm: "SLM") -> None:
-        """Print the DM phase onto an SLM (emulation)."""
-        with torch.no_grad():
-            # Inverse tanh to set raw parameter — clamp for numerical safety
-            phase_clamped = self.phase.clamp(-torch.pi + 1e-4, torch.pi - 1e-4)
-            slm._raw_phase.copy_(torch.atanh(phase_clamped / torch.pi))
+        """Reject an undefined generic conversion to hardware-specific units."""
+        raise NotImplementedError(
+            "Generic DM-to-SLM conversion is undefined. Export OPD commands "
+            "with export_commands() and convert them using the calibrated "
+            "hardware adapter."
+        )
+
+    def export_commands(self) -> torch.Tensor:
+        """Return an independent CPU copy of applied commands in metres OPD."""
+        return self.applied_commands.detach().cpu().clone()
 
     def flatten(self) -> None:
         """Reset all actuators to zero."""
