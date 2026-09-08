@@ -68,14 +68,17 @@ class PhotometricBand:
 
 class Spectrum:
     def __init__(self, magnitude: float, band: Band, samples: int):
-        self.magnitude = magnitude
-        self.wavelengths: torch.Tensor = None
-        self.fluxes: torch.Tensor = None
+        if not isinstance(samples, int) or isinstance(samples, bool) or samples < 1:
+            raise ValueError("samples must be a positive integer.")
 
+        self.magnitude = magnitude
         self._set_wavelengths(band, samples)
         self._set_fluxes(self.magnitude, band, samples)
 
     def _set_wavelengths(self, band: Band, samples: int):
+        if samples == 1:
+            self.wavelengths = torch.tensor([band.central_wavelength])
+            return
         self.wavelengths = band.central_wavelength + band.delta_wavelength * (
             torch.linspace(0, 1, samples) - 0.5
         )
@@ -90,40 +93,25 @@ class Spectrum:
         moved.fluxes = self.fluxes.to(device)
         return moved
 
-    # @classmethod
-    # def from_sampling(cls, band: torch.Tensor, Nu: torch.Tensor) -> Spectrum:
-    #     spectrum = cls.__new__(cls)
-    #     lambda_max = band.central_wavelength + band.delta_wavelength / 2
-    #     # lambda_min = band.central_wavelength - band.delta_wavelength / 2
-    #     d_lambda = lambda_max / Nu
-    #     n_lambda = int(torch.round(torch.asarray(band.delta_wavelength / d_lambda)))
-    #     spectrum.wavelengths = (
-    #         lambda_max - torch.linspace(n_lambda, 0, n_lambda) * d_lambda
-    #     )
-
-    #     cls._set_fluxes(band, n_lambda)
-    #     return spectrum
-
     @classmethod
     def from_sampling(cls, magnitude: float, band: Band, Nu: int) -> Spectrum:
-        """
-        Construit un spectre dont dλ correspond à 1 pixel dans le plan focal.
+        """Build a spectrum sampled at approximately one focal-plane pixel.
 
-        dλ = λ_max / n_pixels
+        At least one channel is always returned. Monochromatic bands and bands
+        narrower than the requested sampling are represented by one channel at
+        the central wavelength.
         """
+        if not isinstance(Nu, int) or isinstance(Nu, bool) or Nu < 1:
+            raise ValueError("Nu must be a positive integer.")
+
         lambda_max = band.central_wavelength + band.delta_wavelength / 2
         d_lambda = 2 * lambda_max / Nu
+        n_lambda = max(1, round(band.delta_wavelength / d_lambda))
 
-        # Nombre de canaux pour couvrir la bande avec ce pas
-        n_lambda = int(
-            torch.round(torch.as_tensor(float((band.delta_wavelength / d_lambda))))
-        )
-
-        spectrum = cls.__new__(cls)
-
-        spectrum.wavelengths = torch.sort(
-            lambda_max - torch.arange(n_lambda) * d_lambda
-        ).values
-        spectrum._set_fluxes(magnitude, band, n_lambda)
+        spectrum = cls(magnitude=magnitude, band=band, samples=n_lambda)
+        if n_lambda > 1:
+            spectrum.wavelengths = torch.sort(
+                lambda_max - torch.arange(n_lambda) * d_lambda
+            ).values
 
         return spectrum
