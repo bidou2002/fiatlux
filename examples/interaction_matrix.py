@@ -245,7 +245,7 @@ if __name__ == "__main__":
             acquiring_function, system=system, source=source, detector=detector
         ),
     )
-    im.push_pull(verbose=True)
+    im.calibrate_push_pull(verbose=True)
 
     im.compute_control_matrix()
     im.plot()

@@ -120,7 +120,7 @@ def main():
             acquiring_function, system=system, source=source, detector=detector
         ),
     )
-    interaction_matrix.push_pull(verbose=True)
+    interaction_matrix.calibrate_push_pull(verbose=True)
     interaction_matrix.compute_control_matrix()
 
     interaction_matrix.plot()
