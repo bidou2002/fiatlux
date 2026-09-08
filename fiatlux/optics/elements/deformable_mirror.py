@@ -279,10 +279,11 @@ class ZernikeBasis(ControlBasis):
 @register_type("DeformableMirror")
 class DeformableMirror(torch.nn.Module):
     """
-    Deformable mirror — phase set by actuator voltages.
+    Deformable mirror controlled by modal OPD coefficients.
 
-    The phase map is interpolated from actuator commands
-    onto the pixel grid of the optical system.
+    Public ``commands`` are coefficients in metres of optical path difference.
+    ``stroke`` is the maximum absolute OPD coefficient accepted by each mode.
+    Values beyond that range are explicitly saturated before application.
     """
 
     def __init__(
@@ -291,7 +292,7 @@ class DeformableMirror(torch.nn.Module):
         actuator_grid: ActuatorGrid,
         pixel_grid: Grid,
         control_basis: ControlBasis,
-        stroke: float = 1e-6,  # max phase stroke (m)
+        stroke: float = 1e-6,  # maximum absolute modal OPD coefficient (m)
         influence_width: float = 1.5,  # actuator influence function width (in actuator pitches)
     ):
         torch.nn.Module.__init__(self)
@@ -299,36 +300,65 @@ class DeformableMirror(torch.nn.Module):
         self.actuator_grid = actuator_grid
         self.pixel_grid = pixel_grid
         self.control_basis = control_basis
-        self.stroke = stroke
+        if stroke <= 0:
+            raise ValueError("stroke must be positive and expressed in metres of OPD.")
+        self.stroke = float(stroke)
         self.influence_width = influence_width
         self.complex_transmission: torch.Tensor | None = None
 
-        # Actuator commands ∈ [-1, 1] via tanh — maps to [-stroke, +stroke]
-        self._commands = torch.zeros(self.control_basis.n_modes())
+        # Raw and applied commands are OPD coefficients in metres. Keeping one
+        # registered Parameter preserves differentiability and nn.Module.to().
+        self._commands = torch.nn.Parameter(
+            torch.zeros(
+                self.control_basis.n_modes(),
+                device=self.pixel_grid.device,
+            )
+        )
 
         # Precompute influence matrix (actuators → pixels) — fixed geometry
-        self._command_matrix = self.control_basis.build_command_matrix()
+        self.register_buffer(
+            "_command_matrix",
+            self.control_basis.build_command_matrix().to(self.pixel_grid.device),
+        )
 
     @property
     def commands(self) -> torch.Tensor:
-        """Actuator commands ∈ [-1, 1]."""
+        """Requested modal OPD coefficients in metres."""
         return self._commands
 
+    @property
+    def applied_commands(self) -> torch.Tensor:
+        """Modal OPD coefficients after physical stroke saturation."""
+        return self._commands.clamp(-self.stroke, self.stroke)
+
     @commands.setter
-    def commands(self, value: torch.Tensor):
-        self._commands = value
+    def commands(self, value: torch.Tensor) -> None:
+        value = torch.as_tensor(
+            value,
+            device=self._commands.device,
+            dtype=self._commands.dtype,
+        )
+        if value.shape != self._commands.shape:
+            raise ValueError(
+                f"commands must have shape {tuple(self._commands.shape)}, "
+                f"got {tuple(value.shape)}."
+            )
+        if not torch.isfinite(value).all():
+            raise ValueError("commands must contain only finite OPD values.")
+        with torch.no_grad():
+            self._commands.copy_(value)
 
     @property
     def opd(self) -> torch.Tensor:
         """
-        OPD map on the pixel grid (nx, ny) in meters.
+        OPD map on the pixel grid ``(ny, nx)`` in metres.
         Obtained by interpolating actuator commands via the influence matrix.
         """
         # commands : (n_actuators,)
         # influence_matrix : (nx*ny, n_actuators)
         # opd : (nx*ny,)
-        opd = self._command_matrix @ (self.commands * self.stroke)
-        return opd.reshape(self.pixel_grid.nx, self.pixel_grid.ny)
+        opd = self._command_matrix @ self.applied_commands
+        return opd.reshape(self.pixel_grid.ny, self.pixel_grid.nx)
 
     def _build(self, spectrum: Spectrum) -> None:
         self.complex_transmission = torch.exp(
