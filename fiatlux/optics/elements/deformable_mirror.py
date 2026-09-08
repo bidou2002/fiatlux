@@ -72,7 +72,8 @@ class GaussianZonalBasis(ControlBasis):
         influence = influence / influence.max(dim=0).values.clamp(min=1e-12)
         return influence
 
-    def n_modes(self):
+    @property
+    def n_modes(self) -> int:
         return self.actuator_grid.n_actuators_x * self.actuator_grid.n_actuators_y
 
 
@@ -105,7 +106,7 @@ class SquareZonalBasis(ControlBasis):
         dx = x_flat[:, None] - ax_flat[None, :]
         dy = y_flat[:, None] - ay_flat[None, :]
 
-        influence = torch.zeros(self.pixel_grid.ny * self.pixel_grid.nx, self.n_modes())
+        influence = torch.zeros(self.pixel_grid.ny * self.pixel_grid.nx, self.n_modes)
         influence[
             (torch.abs(dx) < self.influence_width)
             & (torch.abs(dy) < self.influence_width)
@@ -113,7 +114,8 @@ class SquareZonalBasis(ControlBasis):
 
         return influence
 
-    def n_modes(self):
+    @property
+    def n_modes(self) -> int:
         return self.actuator_grid.n_actuators_x * self.actuator_grid.n_actuators_y
 
 
@@ -168,7 +170,8 @@ class SquarePTTZonalBasis(ControlBasis):
 
         return influence
 
-    def n_modes(self):
+    @property
+    def n_modes(self) -> int:
         return 3 * self.actuator_grid.n_actuators_x * self.actuator_grid.n_actuators_y
 
 
@@ -251,7 +254,8 @@ class FourierBasis(ControlBasis):
 
     #     return modes[:, mask]
 
-    def n_modes(self):
+    @property
+    def n_modes(self) -> int:
         return len(self.frequencies) ** 2
 
 
@@ -272,7 +276,8 @@ class ZernikeBasis(ControlBasis):
 
         return modes[1:, ...].flatten(1, -1).T
 
-    def n_modes(self):
+    @property
+    def n_modes(self) -> int:
         return self.n
 
 
@@ -310,7 +315,7 @@ class DeformableMirror(torch.nn.Module):
         # registered Parameter preserves differentiability and nn.Module.to().
         self._commands = torch.nn.Parameter(
             torch.zeros(
-                self.control_basis.n_modes(),
+                self.control_basis.n_modes,
                 device=self.pixel_grid.device,
             )
         )
