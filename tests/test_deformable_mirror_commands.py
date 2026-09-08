@@ -21,6 +21,7 @@ class TwoPixelBasis(ControlBasis):
         matrix[1, 1] = 1.0
         return matrix
 
+    @property
     def n_modes(self) -> int:
         return 2
 
