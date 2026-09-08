@@ -304,7 +304,7 @@ class DeformableMirror(torch.nn.Module):
             raise ValueError("stroke must be positive and expressed in metres of OPD.")
         self.stroke = float(stroke)
         self.influence_width = influence_width
-        self.complex_transmission: torch.Tensor | None = None
+        self.register_buffer("complex_transmission", None, persistent=False)
 
         # Raw and applied commands are OPD coefficients in metres. Keeping one
         # registered Parameter preserves differentiability and nn.Module.to().
@@ -320,6 +320,16 @@ class DeformableMirror(torch.nn.Module):
             "_command_matrix",
             self.control_basis.build_command_matrix().to(self.pixel_grid.device),
         )
+
+    def _apply(self, fn, recurse=True):
+        """Apply PyTorch transfers and keep grid device metadata consistent."""
+        super()._apply(fn, recurse=recurse)
+        device = self._commands.device
+        self.grid = self.grid.to(device)
+        self.pixel_grid = self.pixel_grid.to(device)
+        if hasattr(self.control_basis, "pixel_grid"):
+            self.control_basis.pixel_grid = self.control_basis.pixel_grid.to(device)
+        return self
 
     @property
     def commands(self) -> torch.Tensor:
