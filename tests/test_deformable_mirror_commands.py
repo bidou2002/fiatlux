@@ -73,6 +73,24 @@ def test_commands_remain_differentiable_inside_stroke():
     assert dm._commands.grad is not None
 
 
+def test_exported_commands_are_applied_opd_values_and_independent():
+    dm = make_dm(stroke=500e-9)
+    dm.commands = torch.tensor([800e-9, -100e-9])
+
+    exported = dm.export_commands()
+    exported.zero_()
+
+    torch.testing.assert_close(
+        dm.applied_commands,
+        torch.tensor([500e-9, -100e-9]),
+    )
+
+
+def test_generic_slm_conversion_is_explicitly_unsupported():
+    with pytest.raises(NotImplementedError, match="hardware adapter"):
+        make_dm().to_slm(object())
+
+
 def test_opd_to_phase_conversion_is_analytical():
     dm = make_dm()
     dm.commands = torch.tensor([100e-9, 0.0])
