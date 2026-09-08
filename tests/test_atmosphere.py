@@ -58,9 +58,17 @@ def test_screen_is_real_rectangular_and_reproducible():
     assert phase_a.shape == (grid.ny, grid.nx)
     assert not phase_a.is_complex()
     assert torch.isfinite(phase_a).all()
-    assert phase_a.mean().abs() < 1e-12
+    assert phase_a.mean().abs() < 1e-5
     torch.testing.assert_close(phase_a, phase_b)
 
+
+
+def test_default_dtype_matches_fiatlux_complex64_pipeline():
+    model = KolmogorovAtmosphereModel(make_grid(), r0=0.2, seed=3)
+
+    assert model.phase_psd.dtype == torch.float32
+    assert model.sample_phase().dtype == torch.float32
+    assert model.sample_opd().dtype == torch.float32
 
 def test_opd_is_phase_converted_at_reference_wavelength():
     kwargs = dict(
