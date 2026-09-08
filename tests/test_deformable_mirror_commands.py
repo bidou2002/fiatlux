@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+from fiatlux.core.field import Field
 from fiatlux.core.grid import Grid
 from fiatlux.core.spectrum import Band, Spectrum
 from fiatlux.optics.elements.deformable_mirror import (
@@ -63,6 +64,51 @@ def test_setting_commands_preserves_registered_parameter():
     assert dm._commands is parameter
     assert list(dm.parameters()) == [parameter]
     assert "_command_matrix" in dict(dm.named_buffers())
+
+
+def test_all_persistent_numerical_state_is_registered():
+    dm = make_dm()
+
+    assert dict(dm.named_parameters()).keys() == {"_commands"}
+    assert dict(dm.named_buffers()).keys() == {"_command_matrix"}
+    assert dm.state_dict().keys() == {"_commands", "_command_matrix"}
+
+
+def test_module_to_dtype_moves_commands_and_command_matrix_together():
+    dm = make_dm().to(dtype=torch.float64)
+
+    assert dm.commands.dtype == torch.float64
+    assert dm._command_matrix.dtype == torch.float64
+    assert dm.opd.dtype == torch.float64
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+def test_module_to_cuda_moves_every_tensor_needed_for_propagation():
+    dm = make_dm()
+    spectrum = Spectrum(
+        magnitude=0,
+        band=Band(central_wavelength=1e-6, delta_wavelength=0.0, f0=1.0),
+        samples=1,
+    )
+    dm._build(spectrum)
+
+    dm = dm.to("cuda")
+    spectrum = spectrum.to("cuda")
+    field = Field(
+        torch.ones((1, 2, 3), dtype=torch.complex64, device="cuda"),
+        Grid(nx=3, ny=2, dx=0.1, dy=0.2, device=torch.device("cuda")),
+        spectrum,
+    )
+    result = dm.apply(field)
+
+    assert dm.commands.device.type == "cuda"
+    assert dm._command_matrix.device.type == "cuda"
+    assert dm.complex_transmission.device.type == "cuda"
+    assert dm.grid.device.type == "cuda"
+    assert dm.pixel_grid.device.type == "cuda"
+    assert dm.control_basis.pixel_grid.device.type == "cuda"
+    assert dm.opd.device.type == "cuda"
+    assert result.complex_amplitude.device.type == "cuda"
 
 
 def test_commands_remain_differentiable_inside_stroke():
