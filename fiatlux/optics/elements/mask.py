@@ -272,29 +272,20 @@ class NCPA(Mask):
         self,
         grid: Grid,
         ncpa_model: NCPAModel,
-        amplitude: float,
         recompute: bool = True,
     ):
         self.ncpa_model = ncpa_model
-        self.amplitude = amplitude
         super().__init__(grid=grid, recompute=recompute)
 
     def _build_transmission(self) -> None:
-        self.transmission = torch.ones((self.grid.ny, self.grid.nx))
-
-    def _build_opd(self) -> None:
-        cn = (
-            torch.randn(*self.ncpa_model.psd.shape)
-            + 1j * torch.randn(*self.ncpa_model.psd.shape)
-        ) * torch.sqrt(self.ncpa_model.psd)
-
-        self.opd = torch.real(
-            torch.fft.ifftshift(torch.fft.ifft2(torch.fft.fftshift(cn)))
-            * 1
-            / (self.grid.nx * self.grid.dx)
+        self.transmission = torch.ones(
+            (self.grid.ny, self.grid.nx),
+            device=self.grid.device,
+            dtype=self.ncpa_model.dtype,
         )
 
-        self.opd *= self.amplitude / self.opd.std()
+    def _build_opd(self) -> None:
+        self.opd = self.ncpa_model.sample_opd()
 
 
 class Random(Mask):
