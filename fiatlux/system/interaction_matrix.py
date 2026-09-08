@@ -28,7 +28,7 @@ class InteractionMatrix:
     def __init__(
         self,
         dm: DeformableMirror,
-        poke_amplitude: float = 0.1,  # in units of dm.stroke
+        poke_amplitude: float = 10e-9,  # modal OPD coefficient in metres
         acquiring_function: Callable = lambda res: res.image,
     ):
         self.dm = dm
