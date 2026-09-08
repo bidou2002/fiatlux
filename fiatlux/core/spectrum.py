@@ -1,4 +1,5 @@
 from __future__ import annotations
+from copy import copy
 from dataclasses import dataclass
 
 import torch
@@ -81,6 +82,13 @@ class Spectrum:
 
     def _set_fluxes(self, magnitude: float, band: Band, samples: int):
         self.fluxes = band.photon_flux(magnitude) * torch.ones(samples) / samples
+
+    def to(self, device: torch.device | str) -> Spectrum:
+        """Return a new spectrum object whose tensors are on ``device``."""
+        moved = copy(self)
+        moved.wavelengths = self.wavelengths.to(device)
+        moved.fluxes = self.fluxes.to(device)
+        return moved
 
     # @classmethod
     # def from_sampling(cls, band: torch.Tensor, Nu: torch.Tensor) -> Spectrum:
