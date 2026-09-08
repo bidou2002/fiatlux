@@ -17,7 +17,6 @@ import os
 from itertools import cycle
 
 from astropy.io import fits
-import torchvision.transforms as transforms
 
 
 @dataclass
@@ -249,23 +248,22 @@ class Atmosphere(Mask):
         grid: Grid,
         atmosphere_model: AtmosphereModel,
         recompute: bool = True,
+        remove_piston: bool = True,
     ):
         self.atmosphere_model = atmosphere_model
+        self.remove_piston = remove_piston
         super().__init__(grid=grid, recompute=recompute)
 
     def _build_transmission(self) -> None:
-        self.transmission = torch.ones((self.grid.ny, self.grid.nx))
+        self.transmission = torch.ones(
+            (self.grid.ny, self.grid.nx),
+            device=self.grid.device,
+            dtype=self.atmosphere_model.dtype,
+        )
 
     def _build_opd(self) -> None:
-        cn = (
-            torch.randn(*self.atmosphere_model.psd.shape)
-            + 1j * torch.randn(*self.atmosphere_model.psd.shape)
-        ) * torch.sqrt(self.atmosphere_model.psd)
-
-        self.opd = torch.real(
-            torch.fft.ifftshift(torch.fft.ifft2(torch.fft.fftshift(cn)))
-            * 1
-            / (self.grid.nx * self.grid.dx)
+        self.opd = self.atmosphere_model.sample_opd(
+            remove_piston=self.remove_piston
         )
 
 
