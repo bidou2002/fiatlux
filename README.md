@@ -163,7 +163,6 @@ Clone the repository and install Fiatlux in editable mode:
 ```bash
 git clone https://github.com/bidou2002/fiatlux.git
 cd fiatlux
-git switch fiatlux2.0
 
 python -m pip install -e .
 ```
@@ -311,7 +310,7 @@ A recommended learning path is:
 | `02_polychromatic_psf.ipynb` | Multi-wavelength propagation |
 | `03_deformable_mirror.ipynb` | DM control and modal aberrations |
 | `04_zelda.ipynb` | ZELDA phase-mask wavefront sensing |
-| `05_interaction_matrix.ipynb` | Push-pull calibration and control matrix |
+| `05_interaction_matrix_modal.ipynb` | Push-pull calibration and control matrix |
 | `06_elt_pupil_from_harmoni.ipynb` | ELT pupil from HARMONI residual data |
 
 ---
@@ -342,6 +341,19 @@ fiatlux/
 ```
 
 The separation between **physical fields**, **optical components**, and **system orchestration** is central to the Fiatlux 2.0 architecture.
+
+## Maintenance policy
+
+- `fiatlux/` contains the supported package API.
+- `tests/` defines the regression and physical contracts of that API.
+- `examples/` contains maintained demonstrations without private-data dependencies.
+- `tutorials/` contains progressive, user-facing notebooks.
+- `experiments/` preserves unsupported research and bench scripts that may require
+  private datasets, hardware, or local configuration.
+
+Historical pre-2.0 modules have been removed from the distributed package. They remain
+available from the Git history and release tags. Generated outputs, operating-system
+metadata, and local datasets must not be committed.
 
 ---
 
