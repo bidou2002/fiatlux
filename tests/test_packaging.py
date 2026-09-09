@@ -19,7 +19,7 @@ def test_pyproject_declares_supported_python_license_and_dependencies():
 
     assert project["requires-python"] == ">=3.10"
     assert project["license"] == "MIT"
-    assert project["dependencies"] == ["torch>=2.0"]
+    assert project["dependencies"] == ["numpy>=1.23.5", "torch>=2.0"]
     assert {"fits", "plot", "tutorials", "dev", "all"} <= set(
         project["optional-dependencies"]
     )
