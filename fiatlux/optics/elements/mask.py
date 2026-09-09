@@ -345,11 +345,21 @@ class Random(Mask):
 
 
 class HarmoniResiduals(Mask):
-    def __init__(self, grid: Grid):
+    """Sequence of HARMONI residual OPD screens and its pupil support.
+
+    ``pupil`` is a boolean transmission mask independent from the individual
+    OPD screen being sampled. Supplying an authoritative pupil is preferred.
+    For legacy datasets without a separate mask, the fallback support is the
+    union of non-zero pixels over every loaded screen, never a single screen.
+    ``support`` is an alias for ``pupil``.
+    """
+
+    def __init__(self, grid: Grid, pupil: torch.Tensor | None = None):
         self.grid = grid
         self.load_datacube(
             path="/Users/janinpop/Documents/code/use_fiatlux/data/harmoni_residuals"
         )
+        self.pupil = self._prepare_pupil(pupil)
 
         r = 1009
         N = len(self.datacube)
@@ -358,6 +368,33 @@ class HarmoniResiduals(Mask):
         self.iterator = iter(cycle(idx.tolist()))
 
         super().__init__(grid=grid, recompute=True)
+
+    def _prepare_pupil(self, pupil: torch.Tensor | None) -> torch.Tensor:
+        if self.datacube.ndim != 3 or tuple(self.datacube.shape[-2:]) != self.grid.shape:
+            raise ValueError(
+                "HARMONI residual datacube must have shape "
+                f"(n_screens, {self.grid.ny}, {self.grid.nx}); got "
+                f"{tuple(self.datacube.shape)}."
+            )
+
+        if pupil is None:
+            pupil = torch.any(self.datacube != 0, dim=0)
+        else:
+            pupil = torch.as_tensor(pupil)
+            if tuple(pupil.shape) != self.grid.shape:
+                raise ValueError(
+                    f"HARMONI pupil must have grid shape {self.grid.shape}; "
+                    f"got {tuple(pupil.shape)}."
+                )
+            if pupil.dtype != torch.bool and not torch.all((pupil == 0) | (pupil == 1)):
+                raise ValueError("HARMONI pupil must be boolean or contain only 0 and 1.")
+
+        return pupil.to(device=self.grid.device, dtype=torch.bool)
+
+    @property
+    def support(self) -> torch.Tensor:
+        """Alias for the public boolean :attr:`pupil` mask."""
+        return self.pupil
 
     def load_datacube(self, path: str) -> None:
         datacube = []
