@@ -27,6 +27,52 @@ from fiatlux.core.grid import Grid
 from fiatlux.utils.random import RandomGeneratorMixin
 
 
+def _plot_psd(
+    psd: torch.Tensor,
+    frequency_grid: tuple[torch.Tensor, torch.Tensor],
+    *,
+    title: str,
+    colorbar_label: str,
+):
+    """Create an explicit diagnostic plot for an unshifted 2-D PSD."""
+    try:
+        import matplotlib.pyplot as plt
+        from matplotlib.colors import LogNorm
+    except ImportError as error:
+        raise ImportError(
+            "PSD plotting requires Matplotlib; install it with "
+            "`python -m pip install 'fiatlux[plot]'`."
+        ) from error
+
+    fx, fy = frequency_grid
+    shifted = torch.fft.fftshift(psd).detach().cpu()
+    positive = shifted[shifted > 0]
+    norm = None
+    if positive.numel():
+        norm = LogNorm(
+            vmin=float(positive.min()),
+            vmax=float(positive.max()),
+        )
+
+    fig, ax = plt.subplots()
+    image = ax.imshow(
+        shifted.numpy(),
+        origin="lower",
+        extent=[
+            float(torch.fft.fftshift(fx)[0, 0]),
+            float(torch.fft.fftshift(fx)[0, -1]),
+            float(torch.fft.fftshift(fy)[0, 0]),
+            float(torch.fft.fftshift(fy)[-1, 0]),
+        ],
+        norm=norm,
+    )
+    ax.set_xlabel("Spatial frequency x [cycles/m]")
+    ax.set_ylabel("Spatial frequency y [cycles/m]")
+    ax.set_title(title)
+    fig.colorbar(image, ax=ax, label=colorbar_label)
+    return fig, ax
+
+
 class AtmosphereModel(RandomGeneratorMixin, ABC):
     """Base class for phase-screen statistics on a fixed spatial grid."""
 
@@ -138,6 +184,15 @@ class AtmosphereModel(RandomGeneratorMixin, ABC):
             remove_piston=remove_piston,
         )
         return phase * (self.reference_wavelength / (2.0 * math.pi))
+
+    def plot_psd(self):
+        """Plot the phase PSD explicitly and return its figure and axes."""
+        return _plot_psd(
+            self.phase_psd,
+            self.frequency_grid(),
+            title="Atmospheric phase PSD",
+            colorbar_label=r"$W_\phi$ [rad² m²]",
+        )
 
 
 class KolmogorovAtmosphereModel(AtmosphereModel):
@@ -338,3 +393,12 @@ class NCPAModel(RandomGeneratorMixin):
             * (self.grid.nx * self.grid.ny)
         )
         return torch.fft.ifft2(torch.fft.fft2(white) * transfer).real
+
+    def plot_psd(self):
+        """Plot the OPD PSD explicitly and return its figure and axes."""
+        return _plot_psd(
+            self.opd_psd,
+            self.frequency_grid(),
+            title="NCPA OPD PSD",
+            colorbar_label="OPD PSD [m⁴]",
+        )
