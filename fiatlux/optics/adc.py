@@ -84,7 +84,9 @@ class ADCDispersionModel:
         )
 
         return torch.deg2rad(
-            torch.tan(torch.deg2rad(torch.as_tensor(angle)))
+            torch.tan(
+                torch.deg2rad(torch.as_tensor(angle, device=wl.device, dtype=wl.dtype))
+            )
             * (N0_1 - N_1)
             * 206264.8
             / 3600

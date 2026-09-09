@@ -122,7 +122,12 @@ class SquareZonalBasis(ControlBasis):
         dx = x_flat[:, None] - ax_flat[None, :]
         dy = y_flat[:, None] - ay_flat[None, :]
 
-        influence = torch.zeros(self.pixel_grid.ny * self.pixel_grid.nx, self.n_modes)
+        influence = torch.zeros(
+            self.pixel_grid.ny * self.pixel_grid.nx,
+            self.n_modes,
+            device=pg.device,
+            dtype=pg.dtype,
+        )
         influence[
             (torch.abs(dx) < self.influence_width)
             & (torch.abs(dy) < self.influence_width)
@@ -192,14 +197,17 @@ class FourierBasis(ControlBasis):
     pupil: Mask
 
     def build_command_matrix(self):
-        n_freqs = len(self.frequencies)
+        frequencies = self.frequencies.to(
+            device=self.pixel_grid.device, dtype=self.pixel_grid.dtype
+        )
+        n_freqs = len(frequencies)
 
         # Pixel coordinate grids  (resolution, resolution)
         x, y = self.pixel_grid.meshgrid()  # (ny, nx)
 
         # All (freq_x, freq_y) pairs  →  (n_freqs, n_freqs)
-        freq_x = self.frequencies[:, None].expand(n_freqs, n_freqs)
-        freq_y = self.frequencies[None, :].expand(n_freqs, n_freqs)
+        freq_x = frequencies[:, None].expand(n_freqs, n_freqs)
+        freq_y = frequencies[None, :].expand(n_freqs, n_freqs)
 
         # Phase for every pair and every pixel  →  (n_freqs, n_freqs, resolution, resolution)
         phase = (
@@ -208,7 +216,9 @@ class FourierBasis(ControlBasis):
 
         # Cosine for freq_x < 0, or freq_x == 0 and freq_y <= 0 (avoids cos/sin redundancy)
         # use_cosine = (freq_x < 0) | ((freq_x <= 0) & (freq_y >= 0))
-        use_cosine = torch.full((n_freqs, n_freqs), True)
+        use_cosine = torch.full(
+            (n_freqs, n_freqs), True, device=self.pixel_grid.device
+        )
         center_freq = n_freqs**2 / 2
         use_cosine[: int(center_freq // n_freqs), :] = False
         use_cosine[int(center_freq // n_freqs), : int(center_freq % n_freqs)] = False
@@ -281,7 +291,7 @@ class ZernikeBasis(ControlBasis):
         modes = zernike_basis(
             nterms=self.n + 1,
             npix=self.pixel_grid.nx,
-        )
+        ).to(device=self.pixel_grid.device, dtype=self.pixel_grid.dtype)
 
         return modes[1:, ...].flatten(1, -1).T
 
@@ -326,23 +336,27 @@ class DeformableMirror(torch.nn.Module):
             torch.zeros(
                 self.control_basis.n_modes,
                 device=self.pixel_grid.device,
+                dtype=self.pixel_grid.dtype,
             )
         )
 
         # Precompute influence matrix (actuators → pixels) — fixed geometry
         self.register_buffer(
             "_command_matrix",
-            self.control_basis.build_command_matrix().to(self.pixel_grid.device),
+            self.control_basis.build_command_matrix().to(
+                device=self.pixel_grid.device, dtype=self.pixel_grid.dtype
+            ),
         )
 
     def _apply(self, fn, recurse=True):
         """Apply PyTorch transfers and keep grid device metadata consistent."""
         super()._apply(fn, recurse=recurse)
         device = self._commands.device
-        self.grid = self.grid.to(device)
-        self.pixel_grid = self.pixel_grid.to(device)
+        dtype = self._commands.dtype
+        self.grid = self.grid.to(device, dtype)
+        self.pixel_grid = self.pixel_grid.to(device, dtype)
         if hasattr(self.control_basis, "pixel_grid"):
-            self.control_basis.pixel_grid = self.control_basis.pixel_grid.to(device)
+            self.control_basis.pixel_grid = self.control_basis.pixel_grid.to(device, dtype)
         return self
 
     @property

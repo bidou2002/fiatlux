@@ -37,7 +37,7 @@ class ShanonFieldStop(Mask):
                 (
                     (x.abs() <= x_limit * (wl / lambda_max))
                     & (y.abs() <= y_limit * (wl / lambda_max))
-                ).to(torch.complex64)
+                ).to(self.grid.dtype)
                 for wl in self._spectrum.wavelengths
             ],
             dim=0,
@@ -47,4 +47,5 @@ class ShanonFieldStop(Mask):
         self.opd = torch.zeros(
             self.grid.shape,
             device=self.grid.device,
+            dtype=self.grid.dtype,
         )

@@ -45,7 +45,7 @@ class Detector:
         self.digitize = digitize
         self.sensitivity = sensitivity
         self.random_seed = random_seed
-        self.generator = torch.Generator().manual_seed(random_seed)
+        self.generator = torch.Generator(device=grid.device).manual_seed(random_seed)
         self.name = name
         self.image_buffer = None
 
@@ -88,15 +88,12 @@ class Detector:
 
     def add_readout_noise(self, electrons: torch.Tensor):
         """Add zero-mean Gaussian read noise with variance in electrons²."""
-        return (
-            torch.normal(
-                mean=0,
-                std=self.readout_noise_variance**0.5,
-                size=electrons.shape,
-                generator=self.generator,
-            )
-            + electrons
+        noise = torch.normal(
+            mean=torch.zeros_like(electrons),
+            std=self.readout_noise_variance**0.5,
+            generator=self.generator,
         )
+        return electrons + noise
 
     def photons_to_electrons(self, photons: torch.Tensor):
         return self.quantum_efficiency * photons
