@@ -101,6 +101,16 @@ def test_acquire_integrates_spectral_rate_over_pixel_area_and_exposure_time():
     assert image is detector.image_buffer
 
 
+def test_acquire_rejects_an_incompatible_grid_with_expected_and_actual_details():
+    detector = make_detector()
+    field = make_field(
+        Grid(nx=3, ny=2, dx=0.2, dy=0.2), torch.tensor([10.0])
+    )
+
+    with pytest.raises(ValueError, match=r"Detector.*expected.*got"):
+        detector.acquire(field)
+
+
 def test_doubling_exposure_time_doubles_source_counts():
     short = make_detector(exposure_time=1.0)
     long = make_detector(exposure_time=2.0)
