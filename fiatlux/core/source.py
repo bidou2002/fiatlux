@@ -65,10 +65,13 @@ class PlaneWave(Source):
         super().__init__(spectrum)
 
     def generate_field(self, grid: Grid) -> Field:
-        spectrum = self.spectrum.to(grid.device)
+        spectrum = self.spectrum.to(device=grid.device, dtype=grid.dtype)
+        complex_dtype = (
+            torch.complex64 if grid.dtype == torch.float32 else torch.complex128
+        )
         spatial_amplitude = torch.ones(
             (grid.ny, grid.nx),
-            dtype=torch.complex64,
+            dtype=complex_dtype,
             device=grid.device,
         )
         return Field(
@@ -96,10 +99,13 @@ class GaussianSource(Source):
 
     def generate_field(self, grid: Grid) -> Field:
         x, y = grid.meshgrid()
-        spectrum = self.spectrum.to(grid.device)
+        spectrum = self.spectrum.to(device=grid.device, dtype=grid.dtype)
+        complex_dtype = (
+            torch.complex64 if grid.dtype == torch.float32 else torch.complex128
+        )
         spatial_amplitude = torch.exp(
             -(x**2 + y**2) / self.waist**2
-        ).to(torch.complex64)
+        ).to(complex_dtype)
         amplitude = self._normalize_spatial_amplitude(
             spatial_amplitude,
             grid,
