@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import torch
 
-from fiatlux.optics.elements.base import OpticalElement
+from fiatlux.optics.elements.base import OpticalElement, validate_field_grid
 from fiatlux.core.grid import Grid
 from fiatlux.core.field import Field
 from fiatlux.core.spectrum import Spectrum
@@ -61,11 +61,27 @@ class Mask(OpticalElement, ABC):
         self.complex_transmission = self.transmission * torch.exp(
             1j * 2 * torch.pi * self.opd / spectrum.wavelengths[:, None, None]
         )
+        expected_shape = (len(spectrum.wavelengths), *expected_spatial_shape)
+        if tuple(self.complex_transmission.shape) != expected_shape:
+            raise ValueError(
+                "Mask complex transmission has incompatible wavelength/spatial "
+                f"shape {tuple(self.complex_transmission.shape)}; expected "
+                f"{expected_shape}."
+            )
+        self._built_wavelengths = spectrum.wavelengths.detach().clone()
 
     def apply(self, field: Field) -> Field:
-        if field.grid != self.grid:
-            raise ValueError("Mask grid must match the incoming field grid.")
-        if self.complex_transmission is None or self.recompute:
+        validate_field_grid(field, self.grid, self.__class__.__name__)
+        wavelengths_changed = (
+            not hasattr(self, "_built_wavelengths")
+            or self._built_wavelengths.shape != field.spectrum.wavelengths.shape
+            or self._built_wavelengths.device != field.spectrum.wavelengths.device
+            or self._built_wavelengths.dtype != field.spectrum.wavelengths.dtype
+            or not torch.equal(
+                self._built_wavelengths, field.spectrum.wavelengths
+            )
+        )
+        if self.complex_transmission is None or self.recompute or wavelengths_changed:
             self.build(field.spectrum)
 
         return Field(
@@ -121,7 +137,9 @@ class ArbitraryAperture(Mask):
             )
 
         # Use provided tensor
-        self.transmission = self._input_transmission.to(device=self.grid.device)
+        self.transmission = self._input_transmission.to(
+            device=self.grid.device, dtype=self.grid.dtype
+        )
 
     def _build_opd(self) -> None:
         self.opd = torch.zeros(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
