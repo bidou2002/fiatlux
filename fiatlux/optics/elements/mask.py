@@ -99,7 +99,7 @@ class CircularAperture(Mask):
         self.transmission = r <= self.radius
 
     def _build_opd(self) -> None:
-        self.opd = torch.zeros((self.grid.ny, self.grid.nx))
+        self.opd = torch.zeros(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
     @property
     def _symbol(self) -> str:
@@ -121,10 +121,10 @@ class ArbitraryAperture(Mask):
             )
 
         # Use provided tensor
-        self.transmission = self._input_transmission
+        self.transmission = self._input_transmission.to(device=self.grid.device)
 
     def _build_opd(self) -> None:
-        self.opd = torch.zeros((self.grid.ny, self.grid.nx))
+        self.opd = torch.zeros(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
     @property
     def _symbol(self) -> str:
@@ -139,7 +139,7 @@ class ZeldaMask(Mask):
         super().__init__(grid=grid)
 
     def _build_transmission(self) -> None:
-        self.transmission = torch.ones((self.grid.ny, self.grid.nx))
+        self.transmission = torch.ones(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
     def _build_opd(self) -> None:
         x, y = self.grid.meshgrid()
@@ -160,7 +160,7 @@ class ZeldaStop(Mask):
         self.transmission = r <= self.radius
 
     def _build_opd(self) -> None:
-        self.opd = torch.zeros((self.grid.ny, self.grid.nx))
+        self.opd = torch.zeros(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
 
 @register_type("Piston")
@@ -171,10 +171,10 @@ class Piston(Mask):
         super().__init__(grid=grid)
 
     def _build_transmission(self) -> None:
-        self.transmission = torch.ones((self.grid.ny, self.grid.nx))
+        self.transmission = torch.ones(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
     def _build_opd(self) -> None:
-        self.opd = self.piston * torch.ones((self.grid.ny, self.grid.nx))
+        self.opd = self.piston * torch.ones(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
 
 @register_type("Step")
@@ -185,12 +185,12 @@ class Step(Mask):
         super().__init__(grid=grid)
 
     def _build_transmission(self) -> None:
-        self.transmission = torch.ones((self.grid.ny, self.grid.nx))
+        self.transmission = torch.ones(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
     def _build_opd(self) -> None:
-        tmp = torch.ones((self.grid.ny, self.grid.nx))
+        tmp = torch.ones(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
         tmp[:, : self.grid.nx // 2] = 0
-        self.opd = self.piston * (torch.ones((self.grid.ny, self.grid.nx)) - tmp)
+        self.opd = self.piston * (torch.ones(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype) - tmp)
 
 
 @register_type("TipTilt")
@@ -202,7 +202,7 @@ class TipTilt(Mask):
         super().__init__(grid=grid)
 
     def _build_transmission(self) -> None:
-        self.transmission = torch.ones((self.grid.ny, self.grid.nx))
+        self.transmission = torch.ones(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
     def _build_opd(self) -> None:
         x, y = self.grid.meshgrid()
@@ -224,40 +224,42 @@ class ProuhetThueMorse(Mask):
         return p
 
     def _build_transmission(self) -> None:
-        self.transmission = torch.ones((self.grid.ny, self.grid.nx))
+        self.transmission = torch.ones(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
     def _build_opd(self) -> None:
         y, x = torch.meshgrid(
-            torch.arange(self.grid.ny),
-            torch.arange(self.grid.nx),
+            torch.arange(self.grid.ny, device=self.grid.device),
+            torch.arange(self.grid.nx, device=self.grid.device),
             indexing="ij",
         )
 
         # XOR-based 2D PTM
         Z = x ^ y
 
-        self.opd = 600e-9 * self.parity_popcount(Z).float()
+        self.opd = 600e-9 * self.parity_popcount(Z).to(self.grid.dtype)
 
 
 @register_type("ADC")
 class ADC(Mask):
 
     def __init__(
-        self, grid: Grid, amplitude: torch.Tensor, angle: float = torch.tensor(0.0)
+        self, grid: Grid, amplitude: torch.Tensor, angle: float = 0.0
     ):
         self.amplitude = amplitude
         self.angle = angle
         super().__init__(grid=grid)
 
     def _build_transmission(self) -> None:
-        self.transmission = torch.ones((self.grid.ny, self.grid.nx))
+        self.transmission = torch.ones(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
     def _build_opd(self) -> None:
         x, y = self.grid.meshgrid()
 
-        self.opd = self.amplitude[:, None, None] * (
-            x * torch.cos(torch.deg2rad(torch.as_tensor(self.angle)))
-            + y * torch.sin(torch.deg2rad(torch.as_tensor(self.angle)))
+        amplitude = self.amplitude.to(device=self.grid.device, dtype=self.grid.dtype)
+        angle = torch.as_tensor(self.angle, device=self.grid.device, dtype=self.grid.dtype)
+        self.opd = amplitude[:, None, None] * (
+            x * torch.cos(torch.deg2rad(angle))
+            + y * torch.sin(torch.deg2rad(angle))
         )
 
 
@@ -318,10 +320,10 @@ class Random(Mask):
         super().__init__(grid=grid, recompute=recompute)
 
     def _build_transmission(self) -> None:
-        self.transmission = torch.ones((self.grid.ny, self.grid.nx))
+        self.transmission = torch.ones(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
     def _build_opd(self) -> None:
-        self.opd = self.amplitude * torch.randn((self.grid.ny, self.grid.nx))
+        self.opd = self.amplitude * torch.randn(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
 
 class HarmoniResiduals(Mask):
@@ -357,7 +359,7 @@ class HarmoniResiduals(Mask):
         self.datacube = torch.cat(datacube, dim=0)
 
     def _build_transmission(self) -> None:
-        self.transmission = torch.ones((self.grid.ny, self.grid.nx))
+        self.transmission = torch.ones(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
     def _build_opd(self) -> None:
-        self.opd = self.datacube[next(self.iterator), ...]
+        self.opd = self.datacube[next(self.iterator), ...].to(device=self.grid.device, dtype=self.grid.dtype)
