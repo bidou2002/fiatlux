@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
+import math
 import torch
 from typing import Callable
 
@@ -20,6 +21,23 @@ class ActuatorGrid:
     n_actuators_x: int
     n_actuators_y: int
     pitch: float  # m between actuators
+
+    def positions(
+        self,
+        *,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return x/y actuator positions centred on the optical axis."""
+        ax = (
+            torch.arange(self.n_actuators_x, device=device, dtype=dtype)
+            - (self.n_actuators_x - 1) / 2
+        ) * self.pitch
+        ay = (
+            torch.arange(self.n_actuators_y, device=device, dtype=dtype)
+            - (self.n_actuators_y - 1) / 2
+        ) * self.pitch
+        return ax, ay
 
 
 @dataclass
@@ -53,8 +71,7 @@ class GaussianZonalBasis(ControlBasis):
         y_flat = y.flatten()
 
         # Actuator positions in meters
-        ax = (torch.arange(ag.n_actuators_x) - ag.n_actuators_x // 2 + 1 / 2) * ag.pitch
-        ay = (torch.arange(ag.n_actuators_y) - ag.n_actuators_y // 2 + 1 / 2) * ag.pitch
+        ax, ay = ag.positions(device=pg.device, dtype=x.dtype)
         ax_grid, ay_grid = torch.meshgrid(ax, ay, indexing="xy")
         ax_flat = ax_grid.flatten()  # (n_actuators,)
         ay_flat = ay_grid.flatten()
@@ -96,8 +113,7 @@ class SquareZonalBasis(ControlBasis):
         y_flat = y.flatten()
 
         # Actuator positions in meters
-        ax = (torch.arange(ag.n_actuators_x) - ag.n_actuators_x // 2 + 1 / 2) * ag.pitch
-        ay = (torch.arange(ag.n_actuators_y) - ag.n_actuators_y // 2 + 1 / 2) * ag.pitch
+        ax, ay = ag.positions(device=pg.device, dtype=x.dtype)
         ax_grid, ay_grid = torch.meshgrid(ax, ay, indexing="xy")
         ax_flat = ax_grid.flatten()  # (n_actuators,)
         ay_flat = ay_grid.flatten()
@@ -126,10 +142,15 @@ class SquarePTTZonalBasis(ControlBasis):
     pixel_grid: Grid
     influence_width: float
 
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.influence_width) or self.influence_width <= 0:
+            raise ValueError("influence_width must be a positive finite length.")
+
     def build_command_matrix(self):
-        """
-        Gaussian influence function for each actuator onto the pixel grid.
-        Shape : (nx*ny, n_actuators)
+        """Build dimensionless piston/tip/tilt modes on square supports.
+
+        Columns are ordered as all piston modes, then all x-tip modes, then all
+        y-tilt modes. The matrix shape is ``(ny * nx, 3 * n_actuators)``.
         """
         ag = self.actuator_grid
         pg = self.pixel_grid
@@ -138,8 +159,7 @@ class SquarePTTZonalBasis(ControlBasis):
         y_flat = y.flatten()
 
         # Actuator positions in meters
-        ax = (torch.arange(ag.n_actuators_x) - ag.n_actuators_x // 2 + 1 / 2) * ag.pitch
-        ay = (torch.arange(ag.n_actuators_y) - ag.n_actuators_y // 2 + 1 / 2) * ag.pitch
+        ax, ay = ag.positions(device=pg.device, dtype=x.dtype)
         ax_grid, ay_grid = torch.meshgrid(ax, ay, indexing="xy")
         ax_flat = ax_grid.flatten()  # (n_actuators,)
         ay_flat = ay_grid.flatten()
@@ -148,23 +168,12 @@ class SquarePTTZonalBasis(ControlBasis):
         dx = x_flat[:, None] - ax_flat[None, :]
         dy = y_flat[:, None] - ay_flat[None, :]
 
-        piston = torch.zeros(dx.shape)
-        piston[
-            (torch.abs(dx) < self.influence_width)
-            & (torch.abs(dy) < self.influence_width)
-        ] = 1
-
-        tip = dx
-        tip[
-            (torch.abs(dx) < self.influence_width)
-            & (torch.abs(dy) < self.influence_width)
-        ] = 1
-
-        tilt = dy
-        tilt[
-            (torch.abs(dx) < self.influence_width)
-            & (torch.abs(dy) < self.influence_width)
-        ] = 1
+        support = (torch.abs(dx) < self.influence_width) & (
+            torch.abs(dy) < self.influence_width
+        )
+        piston = support.to(dx.dtype)
+        tip = torch.where(support, dx / self.influence_width, 0.0)
+        tilt = torch.where(support, dy / self.influence_width, 0.0)
 
         influence = torch.cat([piston, tip, tilt], dim=1)
 
