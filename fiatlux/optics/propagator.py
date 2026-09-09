@@ -8,12 +8,25 @@ from fiatlux.config.registry import register_type
 import torch
 
 
-class Propagator(ABC): ...
+class Propagator(ABC):
+    """Transformation between sampled optical planes.
+
+    A propagator may replace the spatial grid and spatial shape, but preserves
+    wavelength ordering, spectral flux metadata, device, compatible precision,
+    and the leading ``n_wavelengths`` dimension.
+    """
 
 
 @dataclass
 @register_type("MFTPropagator")
 class MFTPropagator(Propagator):
+    """Matrix Fourier transform from a Field grid to ``output_grid``.
+
+    Input amplitudes have shape ``(n_wavelengths, ny_in, nx_in)`` and output
+    amplitudes have shape ``(n_wavelengths, output_grid.ny, output_grid.nx)``.
+    Input and output grids must share device and real dtype. Wavelength
+    channels are propagated independently and retain their original order.
+    """
     focal_length: float
     output_grid: Grid
 
