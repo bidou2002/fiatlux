@@ -21,6 +21,21 @@ def test_identity_propagator_returns_the_same_field_object():
     assert IdentityPropagator(grid).apply(field) is field
 
 
+def test_identity_propagator_rejects_an_unexpected_input_grid():
+    expected_grid = Grid(7, 5, 0.1, 0.2)
+    actual_grid = Grid(7, 5, 0.2, 0.2)
+
+    with pytest.raises(ValueError, match=r"IdentityPropagator.*expected.*got"):
+        IdentityPropagator(expected_grid).apply(make_field(actual_grid))
+
+
+def test_propagators_reject_non_field_inputs_before_torch_operations():
+    grid = Grid(7, 5, 0.1, 0.2)
+
+    with pytest.raises(TypeError, match="MFTPropagator expects a Field"):
+        MFTPropagator(2.0, grid).apply(torch.ones(grid.shape))
+
+
 @pytest.mark.parametrize(
     "dtype, complex_dtype",
     [(torch.float32, torch.complex64), (torch.float64, torch.complex128)],
