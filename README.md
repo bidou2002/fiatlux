@@ -342,6 +342,9 @@ fiatlux/
 
 The separation between **physical fields**, **optical components**, and **system orchestration** is central to the Fiatlux 2.0 architecture.
 
+The exact axis, shape, unit, device, dtype, element, and propagation invariants
+are specified in the [core API contracts](docs/core_contracts.md).
+
 ## Testing
 
 Install the development dependencies and run the complete core suite from the
