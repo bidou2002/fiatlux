@@ -38,3 +38,47 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install '.[all,dev]'
       - run: python -m pytest -q
+
+  tutorials:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install '.[tutorials]'
+      - name: Create synthetic HARMONI dataset
+        env:
+          FIATLUX_HARMONI_DATA: ${{ runner.temp }}/harmoni-residuals
+        run: |
+          mkdir -p "$FIATLUX_HARMONI_DATA"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import numpy as np
+          from astropy.io import fits
+
+          size = 400
+          y, x = np.ogrid[:size, :size]
+          pupil = (x - size // 2) ** 2 + (y - size // 2) ** 2 <= (size // 2 - 2) ** 2
+          data = np.zeros((2, 2, size, size), dtype=np.float32)
+          data[1, 0, pupil] = 50e-9
+          data[1, 1, pupil] = -50e-9
+          fits.PrimaryHDU(data).writeto(
+              Path(os.environ["FIATLUX_HARMONI_DATA"]) / "synthetic.fits"
+          )
+          PY
+      - name: Execute tutorials independently
+        env:
+          FIATLUX_HARMONI_DATA: ${{ runner.temp }}/harmoni-residuals
+          MPLBACKEND: Agg
+        run: |
+          mkdir -p "${{ runner.temp }}/executed-notebooks"
+          for notebook in tutorials/*.ipynb; do
+            jupyter nbconvert \
+              --to notebook \
+              --execute "$notebook" \
+              --output "$(basename "$notebook")" \
+              --output-dir "${{ runner.temp }}/executed-notebooks" \
+              --ExecutePreprocessor.timeout=300
+          done

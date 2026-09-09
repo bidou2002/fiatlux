@@ -42,6 +42,7 @@ tutorials = [
   "ipykernel>=6",
   "jupyterlab>=4",
   "matplotlib>=3.6",
+  "nbconvert>=7.16",
 ]
 dev = [
   "build>=1",
@@ -52,6 +53,7 @@ all = [
   "ipykernel>=6",
   "jupyterlab>=4",
   "matplotlib>=3.6",
+  "nbconvert>=7.16",
 ]
 
 [tool.setuptools.dynamic]

@@ -313,6 +313,8 @@ elt_pupil = ArbitraryAperture(
 ## Tutorials
 
 Progressive notebooks are available in [`tutorials/`](tutorials/).
+The supported environment and clean-kernel validation procedure are described
+in the [tutorial maintenance guide](docs/tutorials.md).
 
 A recommended learning path is:
 
