@@ -15,11 +15,21 @@ if TYPE_CHECKING:
 
 @dataclass
 class Field:
+    """Polychromatic scalar optical field sampled on a physical grid.
+
+    ``complex_amplitude`` has shape ``(n_wavelengths, ny, nx)``. In a spatial
+    plane its units are ``sqrt(photons / s / m²)``, so :meth:`intensity`
+    returns a photon-rate density in ``photons / s / m²`` for each wavelength
+    channel. Consequently, the photon rate in channel ``k`` is
+    ``intensity()[k].sum() * grid.dx * grid.dy``.
+    """
+
     complex_amplitude: torch.Tensor
     grid: BaseGrid
     spectrum: Spectrum
 
     def intensity(self) -> torch.Tensor:
+        """Return spectral photon-rate density ``|E|²`` in photons / s / m²."""
         return self.complex_amplitude.abs() ** 2
 
     def phase(self) -> torch.Tensor:
@@ -120,7 +130,7 @@ class Field:
         axs[0].set_title(
             f"Intensity at λ={self.spectrum.wavelengths[wavelength_index]:.2e} m"
         )
-        fig.colorbar(pcm, ax=axs[0], label="Intensity (in photon)")
+        fig.colorbar(pcm, ax=axs[0], label="Photon rate density (photons/s/m²)")
 
         pcm = axs[1].imshow(
             self.phase()[wavelength_index],
