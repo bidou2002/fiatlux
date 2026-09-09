@@ -1,9 +1,12 @@
 import json
+from dataclasses import dataclass
+from pathlib import Path
 
 from fiatlux.core.grid import Grid
 from fiatlux.core.source import PlaneWave
-from fiatlux.optics.elements.mask import *
-from fiatlux.optics.elements.deformable_mirror import *
+from fiatlux.optics.elements import mask as _mask_types
+from fiatlux.optics.elements import deformable_mirror as _dm_types
+from fiatlux.optics import propagator as _propagator_types
 
 from fiatlux.config.builder import (
     build_serial_elements,
@@ -18,7 +21,21 @@ from fiatlux.optics.detector import Detector
 from fiatlux.system.optical_system import SerialSystem
 
 
-def from_json(path):
+@dataclass
+class SimulationSetup:
+    """Objects required to execute a simulation loaded from configuration."""
+
+    system: SerialSystem
+    source: PlaneWave
+    detector: Detector
+    objects: dict[str, object]
+
+    def run(self):
+        return self.system.run(self.source, self.detector)
+
+
+def from_json(path: str | Path) -> SimulationSetup:
+    """Build a source, ordered optical system and detector from JSON."""
 
     with open(path) as f:
         config = json.load(f)
@@ -33,9 +50,16 @@ def from_json(path):
 
     band = PhotometricBand[spec_cfg["band"]]
 
-    spectrum = Spectrum.from_sampling(
-        magnitude=spec_cfg["magnitude"], band=band, Nu=spec_cfg["Nu"]
-    )
+    if "samples" in spec_cfg:
+        spectrum = Spectrum(
+            magnitude=spec_cfg["magnitude"],
+            band=band,
+            samples=spec_cfg["samples"],
+        )
+    else:
+        spectrum = Spectrum.from_sampling(
+            magnitude=spec_cfg["magnitude"], band=band, Nu=spec_cfg["Nu"]
+        )
 
     source = PlaneWave(spectrum=spectrum)
 
@@ -62,12 +86,22 @@ def from_json(path):
     # Detector
     # ------------------
 
-    detector = Detector(grid=pupil_grid)
+    detector_cfg = dict(config["detector"])
+    detector_grid_name = detector_cfg.pop("grid")
+    try:
+        detector_grid = objects[detector_grid_name]
+    except KeyError as error:
+        raise ValueError(
+            f"Unknown detector grid reference '{detector_grid_name}'."
+        ) from error
+    detector = Detector(grid=detector_grid, **detector_cfg)
+    objects["detector"] = detector
 
     # ------------------
     # System
     # ------------------
 
-    system = SerialSystem(source=source, detector=detector, elements=serial_elements)
+    system = SerialSystem(elements=serial_elements)
+    objects["system"] = system
 
-    return system
+    return SimulationSetup(system, source, detector, objects)
