@@ -71,6 +71,29 @@ def test_shuffle_order_is_reproducible_for_a_seed(tmp_path):
     assert sorted(first_order) == list(range(4))
 
 
+def test_shuffle_accepts_an_external_generator(tmp_path):
+    write_dataset_file(tmp_path / "screens.fits", [1.0, 2.0, 3.0, 4.0])
+    first_generator = torch.Generator().manual_seed(29)
+    second_generator = torch.Generator().manual_seed(29)
+
+    first = HarmoniResiduals(
+        make_grid(),
+        tmp_path,
+        rotate_quarter_turns=0,
+        generator=first_generator,
+    )
+    second = HarmoniResiduals(
+        make_grid(),
+        tmp_path,
+        rotate_quarter_turns=0,
+        generator=second_generator,
+    )
+
+    assert [next(first.iterator) for _ in range(4)] == [
+        next(second.iterator) for _ in range(4)
+    ]
+
+
 def test_missing_non_directory_and_empty_paths_have_actionable_errors(tmp_path):
     with pytest.raises(HarmoniDatasetNotFoundError, match="does not exist"):
         HarmoniResiduals(make_grid(), tmp_path / "missing")

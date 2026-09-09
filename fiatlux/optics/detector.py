@@ -3,9 +3,10 @@ import torch
 from fiatlux.core.grid import Grid
 from fiatlux.core.field import Field
 from fiatlux.optics.elements.base import validate_field_grid
+from fiatlux.utils.random import RandomGeneratorMixin
 
 
-class Detector:
+class Detector(RandomGeneratorMixin):
     def __init__(
         self,
         grid: Grid,
@@ -18,7 +19,8 @@ class Detector:
         bitdepth: int = 16,
         digitize: bool = False,
         sensitivity: float = 1.0,
-        random_seed: int = 0,
+        random_seed: int | None = None,
+        generator: torch.Generator | None = None,
         name: str = "",
     ):
         if exposure_time < 0:
@@ -46,7 +48,11 @@ class Detector:
         self.digitize = digitize
         self.sensitivity = sensitivity
         self.random_seed = random_seed
-        self.generator = torch.Generator(device=grid.device).manual_seed(random_seed)
+        self._configure_generator(
+            grid.device,
+            seed=random_seed,
+            generator=generator,
+        )
         self.name = name
         self.image_buffer = None
 
