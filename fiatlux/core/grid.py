@@ -21,6 +21,14 @@ class BaseGrid(ABC):
 
 @dataclass
 class Grid(BaseGrid):
+    """Uniform Cartesian sampling grid.
+
+    Array-valued quantities use ``(ny, nx)`` order: x is the last axis and y
+    the penultimate axis. Coordinates follow ``(index - size // 2) * spacing``,
+    so the optical origin is at array index ``(ny // 2, nx // 2)``. ``dx`` and
+    ``dy`` are physical spacings in metres. Coordinate tensors use ``device``
+    and the real floating-point ``dtype`` declared by the grid.
+    """
     nx: int
     ny: int
     dx: float
