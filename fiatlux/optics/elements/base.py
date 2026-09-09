@@ -7,6 +7,25 @@ from fiatlux.core.field import Field
 from fiatlux.core.grid import Grid
 
 
+def _grid_description(grid: Grid) -> str:
+    return (
+        f"shape={grid.shape}, spacing=({grid.dy}, {grid.dx}) m, "
+        f"device={grid.device}, dtype={grid.dtype}"
+    )
+
+
+def validate_field_grid(field: Field, expected_grid: Grid, component: str) -> None:
+    """Reject a field that is incompatible with a fixed-grid component."""
+    if not isinstance(field, Field):
+        raise TypeError(f"{component} expects a Field, got {type(field).__name__}.")
+    if field.grid != expected_grid:
+        raise ValueError(
+            f"{component} grid must match the incoming field grid; expected "
+            f"{_grid_description(expected_grid)}, got "
+            f"{_grid_description(field.grid)}."
+        )
+
+
 @dataclass
 class OpticalElement(ABC):
     """Pure same-plane field transformation.
