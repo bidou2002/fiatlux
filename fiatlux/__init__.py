@@ -70,7 +70,7 @@ from .optics.elements.mask import (
 # Config system
 # =========================
 
-from .config.loader import from_json
+from .config.loader import SimulationSetup, from_json
 from .config.builder import build_serial_elements
 
 # =========================
@@ -132,5 +132,6 @@ __all__ = [
     "HarmoniResiduals",
     # Config
     "from_json",
+    "SimulationSetup",
     "build_serial_elements",
 ]

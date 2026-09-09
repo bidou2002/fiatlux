@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from fiatlux.core.field import Field
 from fiatlux.core.grid import Grid
+from fiatlux.config.registry import register_type
 
 import torch
 
@@ -11,6 +12,7 @@ class Propagator(ABC): ...
 
 
 @dataclass
+@register_type("MFTPropagator")
 class MFTPropagator(Propagator):
     focal_length: float
     output_grid: Grid
@@ -69,6 +71,7 @@ class MFTPropagator(Propagator):
         return ">"
 
 @dataclass
+@register_type("IdentityPropagator")
 class IdentityPropagator(Propagator):
     grid: Grid
 
