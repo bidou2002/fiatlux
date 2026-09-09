@@ -1,5 +1,5 @@
 from .adc import ADCDispersionModel
-from .atmosphere import AtmosphereModel
+from .atmosphere import AtmosphereModel, KolmogorovAtmosphereModel, NCPAModel
 from .detector import Detector
 from .propagator import Propagator
 
