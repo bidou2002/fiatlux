@@ -67,34 +67,86 @@ class PhotometricBand:
 
 
 class Spectrum:
-    def __init__(self, magnitude: float, band: Band, samples: int):
+    def __init__(
+        self,
+        magnitude: float,
+        band: Band,
+        samples: int,
+        *,
+        device: torch.device | str = "cpu",
+        dtype: torch.dtype = torch.float32,
+    ):
         if not isinstance(samples, int) or isinstance(samples, bool) or samples < 1:
             raise ValueError("samples must be a positive integer.")
 
+        if dtype not in (torch.float32, torch.float64):
+            raise ValueError("Spectrum dtype must be torch.float32 or torch.float64.")
         self.magnitude = magnitude
-        self._set_wavelengths(band, samples)
-        self._set_fluxes(self.magnitude, band, samples)
-
-    def _set_wavelengths(self, band: Band, samples: int):
-        if samples == 1:
-            self.wavelengths = torch.tensor([band.central_wavelength])
-            return
-        self.wavelengths = band.central_wavelength + band.delta_wavelength * (
-            torch.linspace(0, 1, samples) - 0.5
+        self._set_wavelengths(band, samples, device=torch.device(device), dtype=dtype)
+        self._set_fluxes(
+            self.magnitude,
+            band,
+            samples,
+            device=torch.device(device),
+            dtype=dtype,
         )
 
-    def _set_fluxes(self, magnitude: float, band: Band, samples: int):
-        self.fluxes = band.photon_flux(magnitude) * torch.ones(samples) / samples
+    def _set_wavelengths(
+        self,
+        band: Band,
+        samples: int,
+        *,
+        device: torch.device,
+        dtype: torch.dtype,
+    ):
+        if samples == 1:
+            self.wavelengths = torch.tensor(
+                [band.central_wavelength], device=device, dtype=dtype
+            )
+            return
+        self.wavelengths = band.central_wavelength + band.delta_wavelength * (
+            torch.linspace(0, 1, samples, device=device, dtype=dtype) - 0.5
+        )
 
-    def to(self, device: torch.device | str) -> Spectrum:
-        """Return a new spectrum object whose tensors are on ``device``."""
+    def _set_fluxes(
+        self,
+        magnitude: float,
+        band: Band,
+        samples: int,
+        *,
+        device: torch.device,
+        dtype: torch.dtype,
+    ):
+        self.fluxes = torch.full(
+            (samples,),
+            band.photon_flux(magnitude) / samples,
+            device=device,
+            dtype=dtype,
+        )
+
+    def to(
+        self,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> Spectrum:
+        """Return a new spectrum with the requested device and real dtype."""
+        if dtype is not None and dtype not in (torch.float32, torch.float64):
+            raise ValueError("Spectrum dtype must be torch.float32 or torch.float64.")
         moved = copy(self)
-        moved.wavelengths = self.wavelengths.to(device)
-        moved.fluxes = self.fluxes.to(device)
+        moved.wavelengths = self.wavelengths.to(device=device, dtype=dtype)
+        moved.fluxes = self.fluxes.to(device=device, dtype=dtype)
         return moved
 
     @classmethod
-    def from_sampling(cls, magnitude: float, band: Band, Nu: int) -> Spectrum:
+    def from_sampling(
+        cls,
+        magnitude: float,
+        band: Band,
+        Nu: int,
+        *,
+        device: torch.device | str = "cpu",
+        dtype: torch.dtype = torch.float32,
+    ) -> Spectrum:
         """Build a spectrum sampled at approximately one focal-plane pixel.
 
         At least one channel is always returned. Monochromatic bands and bands
@@ -108,10 +160,17 @@ class Spectrum:
         d_lambda = 2 * lambda_max / Nu
         n_lambda = max(1, round(band.delta_wavelength / d_lambda))
 
-        spectrum = cls(magnitude=magnitude, band=band, samples=n_lambda)
+        spectrum = cls(
+            magnitude=magnitude,
+            band=band,
+            samples=n_lambda,
+            device=device,
+            dtype=dtype,
+        )
         if n_lambda > 1:
             spectrum.wavelengths = torch.sort(
-                lambda_max - torch.arange(n_lambda) * d_lambda
+                lambda_max
+                - torch.arange(n_lambda, device=device, dtype=dtype) * d_lambda
             ).values
 
         return spectrum
