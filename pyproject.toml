@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fiatlux"
+dynamic = ["version"]
+description = "PyTorch-based Fourier-optics and adaptive-optics simulations"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+  { name = "Pierre Janin-Potiron" },
+]
+dependencies = [
+  "numpy>=1.23.5",
+  "torch>=2.0",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Astronomy",
+  "Topic :: Scientific/Engineering :: Physics",
+]
+
+[project.urls]
+Homepage = "https://github.com/bidou2002/fiatlux"
+Repository = "https://github.com/bidou2002/fiatlux"
+Issues = "https://github.com/bidou2002/fiatlux/issues"
+
+[project.optional-dependencies]
+fits = ["astropy>=5"]
+plot = ["matplotlib>=3.6"]
+tutorials = [
+  "astropy>=5",
+  "ipykernel>=6",
+  "jupyterlab>=4",
+  "matplotlib>=3.6",
+]
+dev = [
+  "build>=1",
+  "pytest>=7",
+]
+all = [
+  "astropy>=5",
+  "ipykernel>=6",
+  "jupyterlab>=4",
+  "matplotlib>=3.6",
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "fiatlux._version.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["fiatlux*"]
+exclude = ["fiatlux.legacy*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

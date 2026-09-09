@@ -1,8 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Optional
 from abc import ABC, abstractmethod
-import numpy as np
-
 from fiatlux.core.field import Field
 from fiatlux.core.grid import Grid
 

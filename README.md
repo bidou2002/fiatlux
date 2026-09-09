@@ -169,6 +169,15 @@ python -m pip install -e .
 
 For development, editable installation is recommended so changes to the source code are immediately available in Python and Jupyter.
 
+Optional features can be installed independently:
+
+```bash
+python -m pip install -e '.[fits]'       # FITS and HARMONI datasets
+python -m pip install -e '.[plot]'       # plotting helpers
+python -m pip install -e '.[tutorials]'  # Jupyter tutorial environment
+python -m pip install -e '.[dev]'        # tests and package builds
+```
+
 ---
 
 ## Minimal example — circular-aperture PSF
@@ -350,7 +359,7 @@ Install the development dependencies and run the complete core suite from the
 repository root:
 
 ```bash
-python -m pip install pytest
+python -m pip install -e '.[dev]'
 python -m pytest -q
 ```
 

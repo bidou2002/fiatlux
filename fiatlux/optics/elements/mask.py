@@ -16,9 +16,6 @@ import os
 
 from itertools import cycle
 
-from astropy.io import fits
-
-
 @dataclass
 class Mask(OpticalElement, ABC):
     """
@@ -397,6 +394,13 @@ class HarmoniResiduals(Mask):
         return self.pupil
 
     def load_datacube(self, path: str) -> None:
+        try:
+            from astropy.io import fits
+        except ImportError as error:
+            raise ImportError(
+                "HARMONI FITS data require Astropy; install it with "
+                "`python -m pip install 'fiatlux[fits]'`."
+            ) from error
         datacube = []
         for file in os.listdir(path):
             if file.endswith(".fits"):
