@@ -8,8 +8,7 @@ Typical usage:
     from fiatlux import OpticalSystem
 """
 
-# Version (optional but recommended)
-__version__ = "0.1.0"
+from ._version import __version__
 
 # =========================
 # Core physics objects
@@ -73,15 +72,6 @@ from .optics.elements.mask import (
 from .config.loader import SimulationSetup, from_json
 from .config.builder import build_serial_elements
 from .config.schema import ConfigurationError, validate_config
-
-# =========================
-# Utilities
-# =========================
-
-from .utils.converter import *
-from .utils.fits_loader import *
-from .utils.resolution import *
-from .utils.zernike import *
 
 # =========================
 # Public API control
