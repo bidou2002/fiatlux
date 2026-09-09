@@ -244,3 +244,105 @@ def test_plot_modes_rejects_incompatible_display_shape(shape):
 
     with pytest.raises(ValueError, match="measurement_shape"):
         calibration.plot_modes(measurement_shape=shape)
+
+
+def make_three_mode_calibration(response_matrix, poke_amplitude=20e-9):
+    response_matrix = torch.as_tensor(response_matrix, dtype=torch.float64)
+    dm = LinearDM(n_commands=response_matrix.shape[1])
+    dm._commands = torch.nn.Parameter(
+        torch.zeros(response_matrix.shape[1], dtype=torch.float64)
+    )
+    background = torch.linspace(
+        -3.0, 5.0, response_matrix.shape[0], dtype=torch.float64
+    )
+
+    def acquire():
+        return response_matrix @ dm.commands + background
+
+    return (
+        InteractionMatrix(dm, acquire, poke_amplitude=poke_amplitude),
+        dm,
+        response_matrix,
+        background,
+    )
+
+
+def test_push_pull_sign_normalization_and_dimensions_end_to_end():
+    expected = torch.tensor(
+        [
+            [2.0, -1.0, 0.5],
+            [-3.0, 4.0, -2.0],
+            [1.5, 0.25, 3.0],
+            [-0.5, -2.5, 1.0],
+        ],
+        dtype=torch.float64,
+    ) * 1e8
+    calibration, dm, _, _ = make_three_mode_calibration(expected)
+
+    measured = calibration.calibrate_push_pull(verbose=False)
+
+    assert measured.shape == (4, 3)
+    assert measured.shape[1] == dm.commands.numel()
+    torch.testing.assert_close(measured, expected, rtol=1e-12, atol=1e-6)
+
+
+def test_control_matrix_reconstructs_known_commands_end_to_end():
+    response = torch.tensor(
+        [
+            [2.0, -1.0, 0.5],
+            [-3.0, 4.0, -2.0],
+            [1.5, 0.25, 3.0],
+            [-0.5, -2.5, 1.0],
+        ],
+        dtype=torch.float64,
+    ) * 1e8
+    calibration, dm, _, background = make_three_mode_calibration(response)
+    calibration.calibrate_push_pull(verbose=False)
+    control = calibration.compute_control_matrix()
+    injected = torch.tensor([70e-9, -45e-9, 25e-9], dtype=torch.float64)
+
+    dm.commands = injected
+    differential_measurement = calibration.acquiring_function() - background
+    estimated = control @ differential_measurement
+
+    torch.testing.assert_close(estimated, injected, rtol=1e-12, atol=1e-15)
+
+
+def test_truncated_svd_reconstructs_only_retained_subspace():
+    response = torch.diag(torch.tensor([4.0, 2.0, 0.5], dtype=torch.float64)) * 1e8
+    calibration, _, _, _ = make_three_mode_calibration(response)
+    calibration.calibrate_push_pull(verbose=False)
+    control = calibration.compute_control_matrix(n_modes=2)
+    injected = torch.tensor([60e-9, -30e-9, 90e-9], dtype=torch.float64)
+
+    estimated = control @ (response @ injected)
+
+    torch.testing.assert_close(
+        estimated,
+        torch.tensor([60e-9, -30e-9, 0.0], dtype=torch.float64),
+        rtol=1e-12,
+        atol=1e-15,
+    )
+    assert calibration.retained_mode_indices.tolist() == [0, 1]
+
+
+def test_null_command_mode_is_finite_and_reconstructs_observable_modes():
+    response = torch.tensor(
+        [[3.0, 0.0, 0.0], [0.0, 2.0, 0.0], [1.0, -1.0, 0.0]],
+        dtype=torch.float64,
+    ) * 1e8
+    calibration, _, _, _ = make_three_mode_calibration(response)
+    calibration.calibrate_push_pull(verbose=False)
+    control = calibration.compute_control_matrix()
+    injected = torch.tensor([40e-9, -20e-9, 80e-9], dtype=torch.float64)
+
+    estimated = control @ (response @ injected)
+
+    assert torch.isfinite(control).all()
+    assert calibration.effective_rank == 2
+    torch.testing.assert_close(
+        estimated,
+        torch.tensor([40e-9, -20e-9, 0.0], dtype=torch.float64),
+        rtol=1e-12,
+        atol=1e-15,
+    )
