@@ -33,6 +33,8 @@ class MFTPropagator(Propagator):
     def apply(self, field: Field) -> Field:
         if field.grid.device != self.output_grid.device:
             raise ValueError("MFT input and output grids must be on the same device.")
+        if field.grid.dtype != self.output_grid.dtype:
+            raise ValueError("MFT input and output grids must have the same dtype.")
 
         x, y = field.grid.x, field.grid.y
         u, v = self.output_grid.x, self.output_grid.y
