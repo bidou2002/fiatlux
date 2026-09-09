@@ -16,6 +16,8 @@ from pathlib import Path
 
 from itertools import cycle
 
+from fiatlux.utils.random import RandomGeneratorMixin
+
 @dataclass
 class Mask(OpticalElement, ABC):
     """
@@ -278,16 +280,26 @@ class ADC(Mask):
         )
 
 
-class Atmosphere(Mask):
+class Atmosphere(RandomGeneratorMixin, Mask):
     def __init__(
         self,
         grid: Grid,
         atmosphere_model: AtmosphereModel,
         recompute: bool = True,
         remove_piston: bool = True,
+        seed: int | None = None,
+        generator: torch.Generator | None = None,
     ):
         self.atmosphere_model = atmosphere_model
         self.remove_piston = remove_piston
+        if seed is None and generator is None:
+            self.generator = atmosphere_model.generator
+        else:
+            self._configure_generator(
+                grid.device,
+                seed=seed,
+                generator=generator,
+            )
         super().__init__(grid=grid, recompute=recompute)
 
     def _build_transmission(self) -> None:
@@ -299,18 +311,29 @@ class Atmosphere(Mask):
 
     def _build_opd(self) -> None:
         self.opd = self.atmosphere_model.sample_opd(
+            generator=self.generator,
             remove_piston=self.remove_piston
         )
 
 
-class NCPA(Mask):
+class NCPA(RandomGeneratorMixin, Mask):
     def __init__(
         self,
         grid: Grid,
         ncpa_model: NCPAModel,
         recompute: bool = True,
+        seed: int | None = None,
+        generator: torch.Generator | None = None,
     ):
         self.ncpa_model = ncpa_model
+        if seed is None and generator is None:
+            self.generator = ncpa_model.generator
+        else:
+            self._configure_generator(
+                grid.device,
+                seed=seed,
+                generator=generator,
+            )
         super().__init__(grid=grid, recompute=recompute)
 
     def _build_transmission(self) -> None:
@@ -321,24 +344,36 @@ class NCPA(Mask):
         )
 
     def _build_opd(self) -> None:
-        self.opd = self.ncpa_model.sample_opd()
+        self.opd = self.ncpa_model.sample_opd(generator=self.generator)
 
 
-class Random(Mask):
+class Random(RandomGeneratorMixin, Mask):
     def __init__(
         self,
         grid: Grid,
         amplitude: float,
         recompute: bool = True,
+        seed: int | None = None,
+        generator: torch.Generator | None = None,
     ):
         self.amplitude = amplitude
+        self._configure_generator(
+            grid.device,
+            seed=seed,
+            generator=generator,
+        )
         super().__init__(grid=grid, recompute=recompute)
 
     def _build_transmission(self) -> None:
         self.transmission = torch.ones(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
     def _build_opd(self) -> None:
-        self.opd = self.amplitude * torch.randn(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
+        self.opd = self.amplitude * torch.randn(
+            self.grid.shape,
+            device=self.grid.device,
+            dtype=self.grid.dtype,
+            generator=self.generator,
+        )
 
 
 class HarmoniDatasetError(RuntimeError):
@@ -353,7 +388,7 @@ class InvalidHarmoniDatasetError(HarmoniDatasetError, ValueError):
     """A HARMONI dataset exists but does not satisfy the documented format."""
 
 
-class HarmoniResiduals(Mask):
+class HarmoniResiduals(RandomGeneratorMixin, Mask):
     """Sequence of HARMONI residual OPD screens and its pupil support.
 
     ``pupil`` is a boolean transmission mask independent from the individual
@@ -374,7 +409,8 @@ class HarmoniResiduals(Mask):
         opd_scale: float = 1.0,
         rotate_quarter_turns: int = 1,
         shuffle: bool = True,
-        seed: int = 0,
+        seed: int | None = None,
+        generator: torch.Generator | None = None,
     ):
         self.grid = grid
         self.dataset_path = Path(dataset_path).expanduser()
@@ -392,11 +428,18 @@ class HarmoniResiduals(Mask):
         )
         self.pupil = self._prepare_pupil(pupil)
 
+        self._configure_generator(
+            "cpu",
+            seed=seed,
+            generator=generator,
+        )
         indices = torch.arange(len(self.datacube))
         if shuffle:
-            generator = torch.Generator().manual_seed(seed)
-            indices = indices[torch.randperm(len(indices), generator=generator)]
-        self.iterator = iter(cycle(indices.tolist()))
+            indices = indices[
+                torch.randperm(len(indices), generator=self.generator)
+            ]
+        self._indices = indices.tolist()
+        self.iterator = iter(cycle(self._indices))
 
         super().__init__(grid=grid, recompute=True)
 
@@ -535,4 +578,7 @@ class HarmoniResiduals(Mask):
         self.transmission = torch.ones(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
     def _build_opd(self) -> None:
-        self.opd = self.datacube[next(self.iterator), ...].to(device=self.grid.device, dtype=self.grid.dtype)
+        self.opd = self.datacube[next(self.iterator), ...].to(
+            device=self.grid.device,
+            dtype=self.grid.dtype,
+        )
