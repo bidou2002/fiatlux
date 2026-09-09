@@ -1,6 +1,6 @@
-from .converter import *
-from .fits_loader import *
-from .resolution import *
-from .zernike import *
+"""Utility submodules.
 
-__all__ = ["converter", "fits_loader", "resolution", "zernike"]
+Import a utility from its defining module, for example
+``from fiatlux.utils.fits_loader import load_pupil``. FITS dependencies are
+loaded only when the FITS helper is actually imported.
+"""
