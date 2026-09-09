@@ -12,7 +12,7 @@ from fiatlux.optics.atmosphere import AtmosphereModel, NCPAModel
 
 from fiatlux.config.registry import register_type
 
-import os
+from pathlib import Path
 
 from itertools import cycle
 
@@ -341,6 +341,18 @@ class Random(Mask):
         self.opd = self.amplitude * torch.randn(self.grid.shape, device=self.grid.device, dtype=self.grid.dtype)
 
 
+class HarmoniDatasetError(RuntimeError):
+    """Base exception for an unusable HARMONI residual dataset."""
+
+
+class HarmoniDatasetNotFoundError(HarmoniDatasetError, FileNotFoundError):
+    """The configured HARMONI dataset directory cannot be read."""
+
+
+class InvalidHarmoniDatasetError(HarmoniDatasetError, ValueError):
+    """A HARMONI dataset exists but does not satisfy the documented format."""
+
+
 class HarmoniResiduals(Mask):
     """Sequence of HARMONI residual OPD screens and its pupil support.
 
@@ -351,18 +363,40 @@ class HarmoniResiduals(Mask):
     ``support`` is an alias for ``pupil``.
     """
 
-    def __init__(self, grid: Grid, pupil: torch.Tensor | None = None):
+    def __init__(
+        self,
+        grid: Grid,
+        dataset_path: str | Path,
+        pupil: torch.Tensor | None = None,
+        *,
+        hdu_index: int = 0,
+        opd_plane_index: int | None = 1,
+        opd_scale: float = 1.0,
+        rotate_quarter_turns: int = 1,
+        shuffle: bool = True,
+        seed: int = 0,
+    ):
         self.grid = grid
+        self.dataset_path = Path(dataset_path).expanduser()
+        self.hdu_index = hdu_index
+        self.opd_plane_index = opd_plane_index
+        self.opd_scale = float(opd_scale)
+        self.rotate_quarter_turns = rotate_quarter_turns
+        self.files = self._dataset_files(self.dataset_path)
         self.load_datacube(
-            path="/Users/janinpop/Documents/code/use_fiatlux/data/harmoni_residuals"
+            self.files,
+            hdu_index=hdu_index,
+            opd_plane_index=opd_plane_index,
+            opd_scale=self.opd_scale,
+            rotate_quarter_turns=rotate_quarter_turns,
         )
         self.pupil = self._prepare_pupil(pupil)
 
-        r = 1009
-        N = len(self.datacube)
-        idx = torch.arange(N).repeat(r)
-        idx = idx[torch.randperm(idx.numel())]
-        self.iterator = iter(cycle(idx.tolist()))
+        indices = torch.arange(len(self.datacube))
+        if shuffle:
+            generator = torch.Generator().manual_seed(seed)
+            indices = indices[torch.randperm(len(indices), generator=generator)]
+        self.iterator = iter(cycle(indices.tolist()))
 
         super().__init__(grid=grid, recompute=True)
 
@@ -393,7 +427,34 @@ class HarmoniResiduals(Mask):
         """Alias for the public boolean :attr:`pupil` mask."""
         return self.pupil
 
-    def load_datacube(self, path: str) -> None:
+    @staticmethod
+    def _dataset_files(path: Path) -> list[Path]:
+        if not path.exists():
+            raise HarmoniDatasetNotFoundError(
+                f"HARMONI dataset directory does not exist: {path}"
+            )
+        if not path.is_dir():
+            raise HarmoniDatasetNotFoundError(
+                f"HARMONI dataset path is not a directory: {path}"
+            )
+        files = sorted(
+            item for item in path.iterdir() if item.is_file() and item.suffix.lower() == ".fits"
+        )
+        if not files:
+            raise InvalidHarmoniDatasetError(
+                f"HARMONI dataset directory contains no FITS files: {path}"
+            )
+        return files
+
+    def load_datacube(
+        self,
+        files: list[Path],
+        *,
+        hdu_index: int,
+        opd_plane_index: int | None,
+        opd_scale: float,
+        rotate_quarter_turns: int,
+    ) -> None:
         try:
             from astropy.io import fits
         except ImportError as error:
@@ -401,20 +462,73 @@ class HarmoniResiduals(Mask):
                 "HARMONI FITS data require Astropy; install it with "
                 "`python -m pip install 'fiatlux[fits]'`."
             ) from error
+        if not isinstance(hdu_index, int) or isinstance(hdu_index, bool) or hdu_index < 0:
+            raise ValueError("hdu_index must be a non-negative integer.")
+        if opd_plane_index is not None and (
+            not isinstance(opd_plane_index, int)
+            or isinstance(opd_plane_index, bool)
+            or opd_plane_index < 0
+        ):
+            raise ValueError("opd_plane_index must be None or a non-negative integer.")
+        if not torch.isfinite(torch.tensor(opd_scale)) or opd_scale == 0:
+            raise ValueError("opd_scale must be finite and non-zero.")
+        if not isinstance(rotate_quarter_turns, int) or isinstance(
+            rotate_quarter_turns, bool
+        ):
+            raise ValueError("rotate_quarter_turns must be an integer.")
+
         datacube = []
-        for file in os.listdir(path):
-            if file.endswith(".fits"):
-                hdul = fits.open(os.path.join(path, file))
-                arr = hdul[0].data[1, ...]
-                datacube.append(
-                    torch.rot90(
-                        torch.tensor(
-                            arr.astype(arr.dtype.newbyteorder("="), copy=True)
-                        ),
-                        dims=[1, 2],
-                    ).to(torch.float)
-                    / 2
+        for file in files:
+            with fits.open(file, memmap=False) as hdul:
+                if hdu_index >= len(hdul):
+                    raise InvalidHarmoniDatasetError(
+                        f"{file}: missing HDU index {hdu_index}."
+                    )
+                data = hdul[hdu_index].data
+                if data is None:
+                    raise InvalidHarmoniDatasetError(
+                        f"{file}: HDU {hdu_index} contains no data."
+                    )
+                if data.dtype.kind != "f":
+                    raise InvalidHarmoniDatasetError(
+                        f"{file}: residual OPD data must have a floating dtype; "
+                        f"got {data.dtype}."
+                    )
+                if opd_plane_index is None:
+                    if data.ndim != 3:
+                        raise InvalidHarmoniDatasetError(
+                            f"{file}: expected shape (n_screens, ny, nx) when "
+                            f"opd_plane_index=None; got {data.shape}."
+                        )
+                    selected = data
+                else:
+                    if data.ndim != 4 or opd_plane_index >= data.shape[0]:
+                        raise InvalidHarmoniDatasetError(
+                            f"{file}: expected shape (n_products, n_screens, ny, nx) "
+                            f"containing product {opd_plane_index}; got {data.shape}."
+                        )
+                    selected = data[opd_plane_index]
+
+                if selected.shape[0] < 1:
+                    raise InvalidHarmoniDatasetError(
+                        f"{file}: residual OPD cube contains no screens."
+                    )
+
+                native = selected.astype(selected.dtype.newbyteorder("="), copy=True)
+                cube = torch.from_numpy(native).to(dtype=self.grid.dtype)
+                cube = torch.rot90(
+                    cube, k=rotate_quarter_turns % 4, dims=(-2, -1)
                 )
+                if tuple(cube.shape[-2:]) != self.grid.shape:
+                    raise InvalidHarmoniDatasetError(
+                        f"{file}: transformed residual shape {tuple(cube.shape[-2:])} "
+                        f"does not match grid shape {self.grid.shape}."
+                    )
+                if not torch.isfinite(cube).all():
+                    raise InvalidHarmoniDatasetError(
+                        f"{file}: residual OPD data contain NaN or infinite values."
+                    )
+                datacube.append(cube * opd_scale)
         self.datacube = torch.cat(datacube, dim=0)
 
     def _build_transmission(self) -> None:

@@ -290,7 +290,10 @@ For example, when HARMONI residual phase-screen data are available, the ELT
 pupil support is exposed directly by the residual object:
 
 ```python
-atm_res = HarmoniResiduals(grid=pupil_grid)
+atm_res = HarmoniResiduals(
+    grid=pupil_grid,
+    dataset_path="/path/to/harmoni_residuals",
+)
 
 pupil_mask = atm_res.pupil.to(torch.float32)
 
@@ -301,7 +304,9 @@ elt_pupil = ArbitraryAperture(
 ```
 
 > [!IMPORTANT]
-> Examples based on `HarmoniResiduals` require the corresponding residual phase-screen FITS data to be available locally.
+> Examples based on `HarmoniResiduals` require the corresponding residual
+> phase-screen FITS data to be available locally. The dataset path is always
+> explicit; see the [HARMONI dataset format](docs/harmoni_data.md).
 
 ---
 
