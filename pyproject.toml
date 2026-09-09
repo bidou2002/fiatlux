@@ -13,6 +13,7 @@ authors = [
   { name = "Pierre Janin-Potiron" },
 ]
 dependencies = [
+  "numpy>=1.23.5",
   "torch>=2.0",
 ]
 classifiers = [
