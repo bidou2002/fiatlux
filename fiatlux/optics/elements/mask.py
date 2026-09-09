@@ -42,11 +42,29 @@ class Mask(OpticalElement, ABC):
     def build(self, spectrum: Spectrum) -> None:
         self._build_transmission()
         self._build_opd()
+        expected_spatial_shape = (self.grid.ny, self.grid.nx)
+        allowed_shapes = {
+            expected_spatial_shape,
+            (len(spectrum.wavelengths), *expected_spatial_shape),
+        }
+        for name in ("transmission", "opd"):
+            value = getattr(self, name)
+            if (
+                not isinstance(value, torch.Tensor)
+                or tuple(value.shape) not in allowed_shapes
+            ):
+                raise ValueError(
+                    f"Mask {name} must have shape (ny, nx) or "
+                    f"(n_wavelengths, ny, nx); got "
+                    f"{None if not isinstance(value, torch.Tensor) else tuple(value.shape)}."
+                )
         self.complex_transmission = self.transmission * torch.exp(
             1j * 2 * torch.pi * self.opd / spectrum.wavelengths[:, None, None]
         )
 
     def apply(self, field: Field) -> Field:
+        if field.grid != self.grid:
+            raise ValueError("Mask grid must match the incoming field grid.")
         if self.complex_transmission is None or self.recompute:
             self.build(field.spectrum)
 
@@ -209,13 +227,14 @@ class ProuhetThueMorse(Mask):
         self.transmission = torch.ones((self.grid.ny, self.grid.nx))
 
     def _build_opd(self) -> None:
-        x = torch.arange(self.grid.nx)
-        y = torch.arange(self.grid.ny)
-
-        X, Y = torch.meshgrid(x, y, indexing="ij")
+        y, x = torch.meshgrid(
+            torch.arange(self.grid.ny),
+            torch.arange(self.grid.nx),
+            indexing="ij",
+        )
 
         # XOR-based 2D PTM
-        Z = X ^ Y
+        Z = x ^ y
 
         self.opd = 600e-9 * self.parity_popcount(Z).float()
 
