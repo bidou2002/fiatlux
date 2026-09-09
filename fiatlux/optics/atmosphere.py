@@ -24,9 +24,10 @@ import math
 import torch
 
 from fiatlux.core.grid import Grid
+from fiatlux.utils.random import RandomGeneratorMixin
 
 
-class AtmosphereModel(ABC):
+class AtmosphereModel(RandomGeneratorMixin, ABC):
     """Base class for phase-screen statistics on a fixed spatial grid."""
 
     def __init__(
@@ -35,6 +36,7 @@ class AtmosphereModel(ABC):
         *,
         reference_wavelength: float,
         seed: int | None = None,
+        generator: torch.Generator | None = None,
         dtype: torch.dtype | None = None,
     ) -> None:
         if grid.nx < 2 or grid.ny < 2:
@@ -50,11 +52,11 @@ class AtmosphereModel(ABC):
         self.grid = grid
         self.reference_wavelength = float(reference_wavelength)
         self.dtype = dtype
-        self.generator = torch.Generator(device=grid.device)
-        if seed is None:
-            self.generator.seed()
-        else:
-            self.generator.manual_seed(seed)
+        self._configure_generator(
+            grid.device,
+            seed=seed,
+            generator=generator,
+        )
 
         # PSD arrays use native, unshifted torch.fft ordering.
         self.phase_psd = self.compute_phase_psd()
@@ -166,6 +168,7 @@ class KolmogorovAtmosphereModel(AtmosphereModel):
         *,
         outer_scale: float | None = None,
         seed: int | None = None,
+        generator: torch.Generator | None = None,
         dtype: torch.dtype | None = None,
     ) -> None:
         if r0 <= 0:
@@ -179,6 +182,7 @@ class KolmogorovAtmosphereModel(AtmosphereModel):
             grid,
             reference_wavelength=reference_wavelength,
             seed=seed,
+            generator=generator,
             dtype=dtype,
         )
 
@@ -198,7 +202,7 @@ class KolmogorovAtmosphereModel(AtmosphereModel):
         return 0.023 * self.r0 ** (-5.0 / 3.0) * radial_term
 
 
-class NCPAModel:
+class NCPAModel(RandomGeneratorMixin):
     """Stationary isotropic power-law model for instrumental NCPA.
 
     Unlike atmospheric phase statistics, NCPA are defined directly as an
@@ -236,6 +240,7 @@ class NCPAModel:
         spectral_index: float = 3.0,
         outer_scale: float | None = None,
         seed: int | None = None,
+        generator: torch.Generator | None = None,
         dtype: torch.dtype | None = None,
     ) -> None:
         if grid.nx < 2 or grid.ny < 2:
@@ -257,11 +262,11 @@ class NCPAModel:
         self.spectral_index = float(spectral_index)
         self.outer_scale = None if outer_scale is None else float(outer_scale)
         self.dtype = dtype
-        self.generator = torch.Generator(device=grid.device)
-        if seed is None:
-            self.generator.seed()
-        else:
-            self.generator.manual_seed(seed)
+        self._configure_generator(
+            grid.device,
+            seed=seed,
+            generator=generator,
+        )
 
         self.opd_psd = self.compute_opd_psd()
 
