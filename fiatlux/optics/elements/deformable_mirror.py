@@ -197,6 +197,19 @@ class FourierBasis(ControlBasis):
     frequencies: torch.Tensor  # spatial frequencies in cycles per aperture
     pupil: Mask
 
+    def _mode_selection(self) -> torch.Tensor:
+        """Return the sine/cosine selection without graphical side effects."""
+        n_freqs = len(self.frequencies)
+        use_cosine = torch.full(
+            (n_freqs, n_freqs),
+            True,
+            device=self.pixel_grid.device,
+        )
+        center_freq = n_freqs**2 / 2
+        use_cosine[: int(center_freq // n_freqs), :] = False
+        use_cosine[int(center_freq // n_freqs), : int(center_freq % n_freqs)] = False
+        return use_cosine
+
     def build_command_matrix(self):
         frequencies = self.frequencies.to(
             device=self.pixel_grid.device, dtype=self.pixel_grid.dtype
@@ -217,22 +230,7 @@ class FourierBasis(ControlBasis):
 
         # Cosine for freq_x < 0, or freq_x == 0 and freq_y <= 0 (avoids cos/sin redundancy)
         # use_cosine = (freq_x < 0) | ((freq_x <= 0) & (freq_y >= 0))
-        use_cosine = torch.full(
-            (n_freqs, n_freqs), True, device=self.pixel_grid.device
-        )
-        center_freq = n_freqs**2 / 2
-        use_cosine[: int(center_freq // n_freqs), :] = False
-        use_cosine[int(center_freq // n_freqs), : int(center_freq % n_freqs)] = False
-
-        import matplotlib.pyplot as plt
-
-        fig, ax = plt.subplots()
-        ax.imshow(use_cosine)
-        # Minor ticks
-        ax.set_xticks(torch.arange(-0.5, n_freqs, 1), minor=True)
-        ax.set_yticks(torch.arange(-0.5, n_freqs, 1), minor=True)
-        # Gridlines based on minor ticks
-        ax.grid(which="minor", color="w", linestyle="-", linewidth=2)
+        use_cosine = self._mode_selection()
 
         modes = torch.where(
             use_cosine[:, :, None, None], torch.cos(phase), torch.sin(phase)
@@ -243,6 +241,29 @@ class FourierBasis(ControlBasis):
         ).pow(2).sum(dim=(2, 3), keepdim=True).sqrt()
 
         return modes.reshape(n_freqs**2, self.pixel_grid.nx * self.pixel_grid.ny).T
+
+    def plot_mode_selection(self):
+        """Plot which Fourier modes use cosine or sine and return the axes."""
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError as error:
+            raise ImportError(
+                "Basis plotting requires Matplotlib; install it with "
+                "`python -m pip install 'fiatlux[plot]'`."
+            ) from error
+
+        selection = self._mode_selection().detach().cpu()
+        n_freqs = selection.shape[0]
+        fig, ax = plt.subplots()
+        image = ax.imshow(selection.numpy(), origin="lower")
+        ax.set_xticks(torch.arange(-0.5, n_freqs, 1), minor=True)
+        ax.set_yticks(torch.arange(-0.5, n_freqs, 1), minor=True)
+        ax.grid(which="minor", color="w", linestyle="-", linewidth=2)
+        ax.set_xlabel("Frequency-index x")
+        ax.set_ylabel("Frequency-index y")
+        ax.set_title("Fourier basis mode selection")
+        fig.colorbar(image, ax=ax, ticks=[0, 1], label="0: sine, 1: cosine")
+        return fig, ax
 
     # def build_command_matrix(
     #     self,
