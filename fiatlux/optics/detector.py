@@ -20,6 +20,14 @@ class Detector:
         random_seed: int = 0,
         name: str = "",
     ):
+        if exposure_time < 0:
+            raise ValueError("exposure_time must be non-negative.")
+        if not 0 <= quantum_efficiency <= 1:
+            raise ValueError("quantum_efficiency must be between 0 and 1.")
+        if readout_noise_variance < 0:
+            raise ValueError("readout_noise_variance must be non-negative.")
+        if dark_current < 0:
+            raise ValueError("dark_current must be non-negative.")
         self.grid = grid
         self.exposure_time = exposure_time
         self.quantum_efficiency = quantum_efficiency
@@ -42,30 +50,42 @@ class Detector:
         self.image_buffer = None
 
     def acquire(self, field: Field) -> torch.Tensor:
-        self.image_buffer = self.add_noise(
-            torch.sum(
-                (self.grid.dx * self.grid.dy) * torch.abs(field.complex_amplitude) ** 2,
-                dim=0,
-            )
-        )
+        """Integrate a photon-rate-density field over pixel area and time.
 
-    def add_photon_noise(self, photons):
+        ``field.intensity()`` is interpreted as photons / s / m² in each
+        wavelength channel. The returned image contains electrons, or ADUs
+        when digitization is enabled.
+        """
+        photon_rate = torch.sum(field.intensity(), dim=0) * (
+            self.grid.dx * self.grid.dy
+        )
+        photon_counts = photon_rate * self.exposure_time
+        self.image_buffer = self.add_noise(
+            photon_counts
+        )
+        return self.image_buffer
+
+    def add_photon_noise(self, expected_electrons: torch.Tensor) -> torch.Tensor:
+        """Draw detected photoelectrons from their Poisson distribution."""
         return torch.poisson(
-            photons,
+            expected_electrons,
             generator=self.generator,
         )
 
     def add_dark_noise(self, electrons: torch.Tensor):
-        dark_noise = (self.dark_current * self.exposure_time) * torch.ones(
-            electrons.shape
+        """Add Poisson dark electrons from a rate in e-/pixel/s."""
+        expected_dark_electrons = torch.full_like(
+            electrons,
+            self.dark_current * self.exposure_time,
         )
         dark_noise = torch.poisson(
-            dark_noise,
+            expected_dark_electrons,
             generator=self.generator,
         )
         return electrons + dark_noise
 
     def add_readout_noise(self, electrons: torch.Tensor):
+        """Add zero-mean Gaussian read noise with variance in electrons²."""
         return (
             torch.normal(
                 mean=0,
@@ -90,18 +110,11 @@ class Detector:
         adus = torch.floor(electrons * self.sensitivity) + self.offset
         return adus.clamp(0, max_adu).to(torch.int64)
 
-    def add_noise(self, photons):
-        """
-        CMOS noise simulation following https://arxiv.org/pdf/1412.4031.pdf
-        """
-        # manage photon noise
-        if self.photon_noise == True:
-            photons = self.add_photon_noise(photons=photons)
-        else:
-            photons = photons
-
-        # convert photons to electrons
-        electrons = self.photons_to_electrons(photons=photons)
+    def add_noise(self, photon_counts: torch.Tensor) -> torch.Tensor:
+        """Convert integrated photon counts through the detector pipeline."""
+        electrons = self.photons_to_electrons(photons=photon_counts)
+        if self.photon_noise:
+            electrons = self.add_photon_noise(expected_electrons=electrons)
 
         # add the dark noise to electrons
         electrons = self.add_dark_noise(electrons=electrons)
