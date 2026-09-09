@@ -72,6 +72,7 @@ from .optics.elements.mask import (
 
 from .config.loader import SimulationSetup, from_json
 from .config.builder import build_serial_elements
+from .config.schema import ConfigurationError, validate_config
 
 # =========================
 # Utilities
@@ -133,5 +134,7 @@ __all__ = [
     # Config
     "from_json",
     "SimulationSetup",
+    "ConfigurationError",
+    "validate_config",
     "build_serial_elements",
 ]
