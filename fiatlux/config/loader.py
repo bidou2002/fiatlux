@@ -11,6 +11,7 @@ from fiatlux.optics import propagator as _propagator_types
 from fiatlux.config.builder import (
     build_serial_elements,
 )
+from fiatlux.config.schema import ConfigurationError, validate_config
 
 from fiatlux.core.spectrum import (
     Spectrum,
@@ -37,8 +38,15 @@ class SimulationSetup:
 def from_json(path: str | Path) -> SimulationSetup:
     """Build a source, ordered optical system and detector from JSON."""
 
-    with open(path) as f:
-        config = json.load(f)
+    try:
+        with open(path) as f:
+            config = json.load(f)
+    except json.JSONDecodeError as error:
+        raise ConfigurationError(
+            f"Invalid JSON at line {error.lineno}, column {error.colno}: {error.msg}."
+        ) from error
+
+    validate_config(config)
 
     objects = {}
 
@@ -48,7 +56,12 @@ def from_json(path: str | Path) -> SimulationSetup:
 
     spec_cfg = config["source"]["spectrum"]
 
-    band = PhotometricBand[spec_cfg["band"]]
+    try:
+        band = PhotometricBand[spec_cfg["band"]]
+    except KeyError as error:
+        raise ConfigurationError(
+            f"source.spectrum.band: {error.args[0]}"
+        ) from error
 
     if "samples" in spec_cfg:
         spectrum = Spectrum(
@@ -80,7 +93,10 @@ def from_json(path: str | Path) -> SimulationSetup:
     # Serial elements
     # ------------------
 
-    serial_elements = build_serial_elements(config["serial_elements"], objects)
+    try:
+        serial_elements = build_serial_elements(config["serial_elements"], objects)
+    except (TypeError, ValueError) as error:
+        raise ConfigurationError(f"serial_elements: {error}") from error
 
     # ------------------
     # Detector
@@ -94,7 +110,10 @@ def from_json(path: str | Path) -> SimulationSetup:
         raise ValueError(
             f"Unknown detector grid reference '{detector_grid_name}'."
         ) from error
-    detector = Detector(grid=detector_grid, **detector_cfg)
+    try:
+        detector = Detector(grid=detector_grid, **detector_cfg)
+    except (TypeError, ValueError) as error:
+        raise ConfigurationError(f"detector: {error}") from error
     objects["detector"] = detector
 
     # ------------------
@@ -102,6 +121,35 @@ def from_json(path: str | Path) -> SimulationSetup:
     # ------------------
 
     system = SerialSystem(elements=serial_elements)
+    _validate_grid_chain(system, detector)
     objects["system"] = system
 
     return SimulationSetup(system, source, detector, objects)
+
+
+def _validate_grid_chain(system: SerialSystem, detector: Detector) -> None:
+    """Reject incompatible element and detector grids before propagation."""
+    current_grid = getattr(system.elements[0], "grid", None)
+    if current_grid is None:
+        current_grid = getattr(system.elements[0], "pixel_grid", None)
+    if current_grid is None:
+        raise ConfigurationError(
+            "serial_elements.0 does not define the source-generation grid."
+        )
+
+    for index, element in enumerate(system.elements):
+        expected_grid = getattr(element, "pixel_grid", None)
+        if expected_grid is None and not hasattr(element, "output_grid"):
+            expected_grid = getattr(element, "grid", None)
+        if expected_grid is not None and expected_grid != current_grid:
+            raise ConfigurationError(
+                f"serial_elements.{index} ({type(element).__name__}) uses a grid "
+                "incompatible with the preceding optical plane."
+            )
+        if hasattr(element, "output_grid"):
+            current_grid = element.output_grid
+
+    if detector.grid != current_grid:
+        raise ConfigurationError(
+            "detector.grid is incompatible with the final optical plane."
+        )
