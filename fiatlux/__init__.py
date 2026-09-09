@@ -63,6 +63,9 @@ from .optics.elements.mask import (
     TipTilt,
     Piston,
     HarmoniResiduals,
+    HarmoniDatasetError,
+    HarmoniDatasetNotFoundError,
+    InvalidHarmoniDatasetError,
 )
 
 # =========================
@@ -121,6 +124,9 @@ __all__ = [
     "TipTilt",
     "Piston",
     "HarmoniResiduals",
+    "HarmoniDatasetError",
+    "HarmoniDatasetNotFoundError",
+    "InvalidHarmoniDatasetError",
     # Config
     "from_json",
     "SimulationSetup",
