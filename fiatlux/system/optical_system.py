@@ -4,8 +4,6 @@ from dataclasses import dataclass
 
 import torch
 
-import matplotlib.pyplot as plt
-
 import math
 
 from fiatlux.core.field import Field
@@ -99,6 +97,13 @@ class SimulationResult:
         return iter(self.steps)
 
     def plot(self):
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError as error:
+            raise ImportError(
+                "Plotting requires Matplotlib; install it with "
+                "`python -m pip install 'fiatlux[plot]'`."
+            ) from error
         n = math.ceil(len(self.steps) ** 0.5)
         print(n)
         fig, axs = plt.subplots(n, n)
