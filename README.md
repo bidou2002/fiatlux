@@ -277,14 +277,13 @@ The same architecture can represent a simple telescope PSF calculation or a more
 
 Fiatlux can use real telescope pupil geometries through `ArbitraryAperture`.
 
-For example, when HARMONI residual phase-screen data are available, an ELT pupil can be extracted from the support of the residual maps:
+For example, when HARMONI residual phase-screen data are available, the ELT
+pupil support is exposed directly by the residual object:
 
 ```python
 atm_res = HarmoniResiduals(grid=pupil_grid)
 
-pupil_mask = (
-    atm_res.datacube[0] != 0
-).to(torch.float32)
+pupil_mask = atm_res.pupil.to(torch.float32)
 
 elt_pupil = ArbitraryAperture(
     grid=pupil_grid,
