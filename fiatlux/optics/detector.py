@@ -15,7 +15,7 @@ class Detector:
         dark_current: float = 0,
         offset: int = 0,
         bitdepth: int = 16,
-        binarize: bool = False,
+        digitize: bool = False,
         sensitivity: float = 1.0,
         random_seed: int = 0,
         name: str = "",
@@ -27,8 +27,14 @@ class Detector:
         self.readout_noise_variance = readout_noise_variance
         self.dark_current = dark_current
         self.offset = offset
+        if (
+            not isinstance(bitdepth, int)
+            or isinstance(bitdepth, bool)
+            or bitdepth < 1
+        ):
+            raise ValueError("bitdepth must be a positive integer.")
         self.bitdepth = bitdepth
-        self.binarize = binarize
+        self.digitize = digitize
         self.sensitivity = sensitivity
         self.random_seed = random_seed
         self.generator = torch.Generator().manual_seed(random_seed)
@@ -73,20 +79,16 @@ class Detector:
     def photons_to_electrons(self, photons: torch.Tensor):
         return self.quantum_efficiency * photons
 
-    def electrons_to_ADUs(self, electrons: torch.Tensor):
-        # Convert to ADU and add baseline
-        max_adu = int(2**self.bitdepth - 1)
-        adu = torch.floor(electrons * self.sensitivity)  # Convert to discrete numbers
+    def electrons_to_adus(self, electrons: torch.Tensor) -> torch.Tensor:
+        """Digitize electrons into integer ADUs in the configured ADC range.
 
-        adu += self.offset
-        # models pixel saturation
-        adu[adu > max_adu] = max_adu
-
-        # Transform to 16 bit image
-        adu *= 2 ** (16 - self.bitdepth)
-        adu = adu.type(torch.int16)
-
-        return adu
+        Gain and offset are applied before values are clipped to
+        ``[0, 2**bitdepth - 1]``. ``int64`` is used so a 16-bit ADC can safely
+        represent its full range, including 65535.
+        """
+        max_adu = 2**self.bitdepth - 1
+        adus = torch.floor(electrons * self.sensitivity) + self.offset
+        return adus.clamp(0, max_adu).to(torch.int64)
 
     def add_noise(self, photons):
         """
@@ -108,7 +110,7 @@ class Detector:
         electrons = self.add_readout_noise(electrons=electrons)
 
         # Convert to ADU and add baseline
-        if self.binarize:
-            return self.electrons_to_ADUs(electrons=electrons)
+        if self.digitize:
+            return self.electrons_to_adus(electrons=electrons)
 
         return electrons
