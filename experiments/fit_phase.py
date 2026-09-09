@@ -1,3 +1,5 @@
+"""Research script retained for reference; not part of the supported examples."""
+
 from fiatlux.optics.elements.mask import CircularAperture
 from fiatlux.core.grid import Grid
 from fiatlux.core.spectrum import *

@@ -1,3 +1,5 @@
+"""Research script requiring local bench data; not part of the supported examples."""
+
 from fiatlux import *
 import torch
 import matplotlib.pyplot as plt
