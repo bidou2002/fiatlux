@@ -48,7 +48,7 @@ class GaussianZonalBasis(ControlBasis):
         """
         ag = self.actuator_grid
         pg = self.pixel_grid
-        x, y = pg.meshgrid()  # (nx, ny)
+        x, y = pg.meshgrid()  # (ny, nx)
         x_flat = x.flatten()  # (nx*ny,)
         y_flat = y.flatten()
 
@@ -91,7 +91,7 @@ class SquareZonalBasis(ControlBasis):
         """
         ag = self.actuator_grid
         pg = self.pixel_grid
-        x, y = pg.meshgrid()  # (nx, ny)
+        x, y = pg.meshgrid()  # (ny, nx)
         x_flat = x.flatten()  # (nx*ny,)
         y_flat = y.flatten()
 
@@ -133,7 +133,7 @@ class SquarePTTZonalBasis(ControlBasis):
         """
         ag = self.actuator_grid
         pg = self.pixel_grid
-        x, y = pg.meshgrid()  # (nx, ny)
+        x, y = pg.meshgrid()  # (ny, nx)
         x_flat = x.flatten()  # (nx*ny,)
         y_flat = y.flatten()
 
@@ -186,7 +186,7 @@ class FourierBasis(ControlBasis):
         n_freqs = len(self.frequencies)
 
         # Pixel coordinate grids  (resolution, resolution)
-        x, y = self.pixel_grid.meshgrid()  # (nx, ny)
+        x, y = self.pixel_grid.meshgrid()  # (ny, nx)
 
         # All (freq_x, freq_y) pairs  →  (n_freqs, n_freqs)
         freq_x = self.frequencies[:, None].expand(n_freqs, n_freqs)
@@ -381,6 +381,8 @@ class DeformableMirror(torch.nn.Module):
         )
 
     def apply(self, field: Field) -> Field:
+        if field.grid != self.pixel_grid:
+            raise ValueError("DM pixel grid must match the incoming field grid.")
         self._build(field.spectrum)
 
         return Field(

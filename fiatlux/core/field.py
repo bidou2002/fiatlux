@@ -28,6 +28,40 @@ class Field:
     grid: BaseGrid
     spectrum: Spectrum
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.complex_amplitude, torch.Tensor):
+            raise TypeError("complex_amplitude must be a torch.Tensor.")
+        if self.complex_amplitude.ndim != 3:
+            raise ValueError(
+                "complex_amplitude must have shape (n_wavelengths, ny, nx)."
+            )
+        if self.spectrum.wavelengths.ndim != 1 or self.spectrum.fluxes.ndim != 1:
+            raise ValueError("Spectrum wavelengths and fluxes must be one-dimensional.")
+        if self.spectrum.wavelengths.shape != self.spectrum.fluxes.shape:
+            raise ValueError("Spectrum wavelengths and fluxes must have identical shapes.")
+
+        expected_shape = (
+            len(self.spectrum.wavelengths),
+            self.grid.ny,
+            self.grid.nx,
+        )
+        if self.complex_amplitude.shape != expected_shape:
+            raise ValueError(
+                "complex_amplitude must have shape "
+                f"(n_wavelengths, ny, nx) = {expected_shape}, got "
+                f"{tuple(self.complex_amplitude.shape)}."
+            )
+        devices = {
+            self.complex_amplitude.device,
+            self.spectrum.wavelengths.device,
+            self.spectrum.fluxes.device,
+            self.grid.device,
+        }
+        if len(devices) != 1:
+            raise ValueError(
+                "Field amplitude, spectrum and grid must be on the same device."
+            )
+
     def intensity(self) -> torch.Tensor:
         """Return spectral photon-rate density ``|E|²`` in photons / s / m²."""
         return self.complex_amplitude.abs() ** 2

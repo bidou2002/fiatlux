@@ -56,6 +56,8 @@ class Detector:
         wavelength channel. The returned image contains electrons, or ADUs
         when digitization is enabled.
         """
+        if field.grid != self.grid:
+            raise ValueError("Detector grid must match the incoming field grid.")
         photon_rate = torch.sum(field.intensity(), dim=0) * (
             self.grid.dx * self.grid.dy
         )

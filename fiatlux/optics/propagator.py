@@ -31,24 +31,33 @@ class MFTPropagator(Propagator):
         return torch.exp(-2j * torch.pi * torch.outer(x, u))  # (nx, mx) — 2D
 
     def apply(self, field: Field) -> Field:
+        if field.grid.device != self.output_grid.device:
+            raise ValueError("MFT input and output grids must be on the same device.")
+
         x, y = field.grid.x, field.grid.y
         u, v = self.output_grid.x, self.output_grid.y
 
-        wavelengths = field.spectrum.wavelengths  # (n_wavelengths,)
+        real_dtype = field.complex_amplitude.real.dtype
+        x = x.to(dtype=real_dtype)
+        y = y.to(dtype=real_dtype)
+        u = u.to(dtype=real_dtype)
+        v = v.to(dtype=real_dtype)
+        wavelengths = field.spectrum.wavelengths.to(dtype=real_dtype)
 
         def propagate_one(
             amplitude: torch.Tensor, wavelength: torch.Tensor
         ) -> torch.Tensor:
-            M1 = self._dft_matrix(v, y, wavelength, self.focal_length)
-            M2 = self._dft_matrix(x, u, wavelength, self.focal_length)
+            mx = self._dft_matrix(x, u, wavelength, self.focal_length)
+            my = self._dft_matrix(y, v, wavelength, self.focal_length)
             return (
-                (M2.T @ amplitude @ M1.T)
+                (my.T @ amplitude @ mx)
                 * field.grid.dx
                 * field.grid.dy
                 / (wavelength * self.focal_length)
             )
 
-        # field.amplitude : (n_wavelengths, nx, ny)
+        # field.complex_amplitude: (n_wavelengths, ny_in, nx_in)
+        # amplitude: (n_wavelengths, ny_out, nx_out)
         amplitude = torch.vmap(propagate_one)(field.complex_amplitude, wavelengths)
 
         return Field(amplitude, self.output_grid, field.spectrum)
@@ -56,26 +65,6 @@ class MFTPropagator(Propagator):
     @property
     def _symbol(self) -> str:
         return ">"
-
-    # def propagate(self, field: Field, output_grid: Grid) -> Field:
-    #     input_grid = field.grid
-    #     x, y = input_grid.x, input_grid.y
-    #     u, v = output_grid.x, output_grid.y
-
-    #     wavelengths = field.spectrum.wavelengths  # (n_wavelengths,)
-
-    #     def propagate_one(
-    #         amplitude: torch.Tensor, wavelength: torch.Tensor
-    #     ) -> torch.Tensor:
-    #         M1 = self._dft_matrix(v, y, wavelength, self.focal_length)
-    #         M2 = self._dft_matrix(x, u, wavelength, self.focal_length)
-    #         return M2.T @ amplitude @ M1.T
-
-    #     # field.amplitude : (n_wavelengths, nx, ny)
-    #     amplitude = torch.vmap(propagate_one)(field.complex_amplitude, wavelengths)
-
-    #     return Field(amplitude, output_grid, field.spectrum)
-
 
 @dataclass
 class IdentityPropagator(Propagator):
