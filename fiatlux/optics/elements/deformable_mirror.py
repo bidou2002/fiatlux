@@ -5,6 +5,7 @@ import torch
 from typing import Callable
 
 from fiatlux.core.grid import Grid
+from fiatlux.optics.elements.base import validate_field_grid
 from fiatlux.core.field import Field
 from fiatlux.core.spectrum import Spectrum
 from fiatlux.utils.zernike import zernike_basis
@@ -320,6 +321,18 @@ class DeformableMirror(torch.nn.Module):
         influence_width: float = 1.5,  # actuator influence function width (in actuator pitches)
     ):
         torch.nn.Module.__init__(self)
+        if grid != pixel_grid:
+            raise ValueError(
+                "DeformableMirror grid and pixel_grid must be identical; "
+                f"got grid shape {grid.shape} with spacing ({grid.dy}, {grid.dx}) m "
+                f"and pixel_grid shape {pixel_grid.shape} with spacing "
+                f"({pixel_grid.dy}, {pixel_grid.dx}) m."
+            )
+        basis_grid = getattr(control_basis, "pixel_grid", pixel_grid)
+        if basis_grid != pixel_grid:
+            raise ValueError(
+                "DeformableMirror control-basis pixel grid must match pixel_grid."
+            )
         self.grid = grid
         self.actuator_grid = actuator_grid
         self.pixel_grid = pixel_grid
@@ -341,9 +354,20 @@ class DeformableMirror(torch.nn.Module):
         )
 
         # Precompute influence matrix (actuators → pixels) — fixed geometry
+        command_matrix = self.control_basis.build_command_matrix()
+        expected_shape = (
+            self.pixel_grid.ny * self.pixel_grid.nx,
+            self.control_basis.n_modes,
+        )
+        if tuple(command_matrix.shape) != expected_shape:
+            raise ValueError(
+                "DeformableMirror control basis returned a command matrix with "
+                f"shape {tuple(command_matrix.shape)}; expected {expected_shape} "
+                "for (n_pixels, n_modes)."
+            )
         self.register_buffer(
             "_command_matrix",
-            self.control_basis.build_command_matrix().to(
+            command_matrix.to(
                 device=self.pixel_grid.device, dtype=self.pixel_grid.dtype
             ),
         )
@@ -404,8 +428,7 @@ class DeformableMirror(torch.nn.Module):
         )
 
     def apply(self, field: Field) -> Field:
-        if field.grid != self.pixel_grid:
-            raise ValueError("DM pixel grid must match the incoming field grid.")
+        validate_field_grid(field, self.pixel_grid, "DeformableMirror")
         self._build(field.spectrum)
 
         return Field(
