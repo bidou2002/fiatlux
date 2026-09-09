@@ -1,0 +1,36 @@
+{
+    "source": {
+        "spectrum": {
+            "magnitude": 0,
+            "band": "HCM2",
+            "samples": 2
+        }
+    },
+    "pupil_grid": {
+        "nx": 8,
+        "ny": 6,
+        "dx": 0.1,
+        "dy": 0.12
+    },
+    "focal_grid": {
+        "nx": 10,
+        "ny": 4,
+        "dx": 1e-6,
+        "dy": 1.5e-6
+    },
+    "serial_elements": {
+        "CircularAperture_0": {
+            "grid": "pupil_grid",
+            "radius": 0.31
+        },
+        "MFTPropagator_0": {
+            "focal_length": 2.0,
+            "output_grid": "focal_grid"
+        }
+    },
+    "detector": {
+        "grid": "focal_grid",
+        "exposure_time": 1.0,
+        "quantum_efficiency": 1.0
+    }
+}
