@@ -48,7 +48,25 @@ Instead of writing a new propagation script for every experiment, Fiatlux separa
 Fiatlux is built around **PyTorch tensors**, allowing optical simulations to integrate naturally with modern numerical optimization and machine-learning workflows.
 
 > [!NOTE]
-> The `fiatlux2.0` branch is under active development. The API and physical normalization conventions are still being consolidated.
+> Fiatlux is active research software and its API may still evolve. The physical normalization below is part of the supported core contract.
+
+### Physical field normalization
+
+In every spatial optical plane, Fiatlux uses the following convention for each wavelength channel:
+
+```text
+Field.complex_amplitude       sqrt(photons / s / m²)
+Field.intensity() = |E|²      photons / s / m²
+Spectrum.fluxes               photons / s per wavelength channel
+```
+
+The photon rate carried by channel `k` is therefore the discrete spatial integral
+
+```python
+photon_rate_k = field.intensity()[k].sum() * field.grid.dx * field.grid.dy
+```
+
+`PlaneWave` and `GaussianSource` are normalized so this integral equals `spectrum.fluxes[k]`. Lossless propagation preserves that integral when the input and output grids form a correctly sampled Fourier pair. A detector then integrates the spectral photon-rate density over wavelength channels, physical pixel area and exposure time before applying quantum efficiency and detector noise.
 
 ---
 
