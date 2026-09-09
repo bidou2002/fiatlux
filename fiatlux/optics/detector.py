@@ -2,6 +2,7 @@ import torch
 
 from fiatlux.core.grid import Grid
 from fiatlux.core.field import Field
+from fiatlux.optics.elements.base import validate_field_grid
 
 
 class Detector:
@@ -56,8 +57,7 @@ class Detector:
         wavelength channel. The returned image contains electrons, or ADUs
         when digitization is enabled.
         """
-        if field.grid != self.grid:
-            raise ValueError("Detector grid must match the incoming field grid.")
+        validate_field_grid(field, self.grid, "Detector")
         photon_rate = torch.sum(field.intensity(), dim=0) * (
             self.grid.dx * self.grid.dy
         )

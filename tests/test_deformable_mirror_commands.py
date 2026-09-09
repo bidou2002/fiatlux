@@ -37,6 +37,34 @@ def make_dm(stroke=1e-6):
     )
 
 
+def test_constructor_rejects_distinct_optical_and_pixel_grids():
+    grid = Grid(nx=3, ny=2, dx=0.1, dy=0.2)
+    pixel_grid = Grid(nx=3, ny=2, dx=0.2, dy=0.2)
+
+    with pytest.raises(ValueError, match="grid and pixel_grid must be identical"):
+        DeformableMirror(
+            grid=grid,
+            actuator_grid=ActuatorGrid(2, 1, 0.1),
+            pixel_grid=pixel_grid,
+            control_basis=TwoPixelBasis(pixel_grid),
+        )
+
+
+def test_constructor_rejects_a_malformed_command_matrix():
+    class BadBasis(TwoPixelBasis):
+        def build_command_matrix(self):
+            return torch.zeros(5, self.n_modes)
+
+    grid = Grid(nx=3, ny=2, dx=0.1, dy=0.2)
+    with pytest.raises(ValueError, match=r"shape \(5, 2\).*expected \(6, 2\)"):
+        DeformableMirror(
+            grid=grid,
+            actuator_grid=ActuatorGrid(2, 1, 0.1),
+            pixel_grid=grid,
+            control_basis=BadBasis(grid),
+        )
+
+
 def test_commands_are_opd_coefficients_in_metres():
     dm = make_dm()
     dm.commands = torch.tensor([120e-9, -80e-9])

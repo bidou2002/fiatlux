@@ -63,6 +63,32 @@ def test_arbitrary_aperture_rejects_wrong_shape(optical_state):
         aperture.build(spectrum)
 
 
+def test_arbitrary_aperture_converts_transmission_to_grid_precision(optical_state):
+    grid, _, field = optical_state
+    aperture = ArbitraryAperture(
+        grid, torch.ones(grid.shape, dtype=torch.float32)
+    )
+
+    output = aperture.apply(field)
+
+    assert aperture.transmission.dtype == grid.dtype
+    assert output.complex_amplitude.dtype == field.complex_amplitude.dtype
+
+
+def test_mask_rebuilds_its_chromatic_cache_when_wavelengths_change():
+    grid = Grid(7, 5, 0.1, 0.2)
+    first = Spectrum(0, Band(1e-6, 0.0, 1e8), 1)
+    second = Spectrum(0, Band(2e-6, 0.0, 1e8), 1)
+    mask = Piston(grid, piston=100e-9)
+
+    mask.apply(PlaneWave(first).generate_field(grid))
+    first_transfer = mask.complex_transmission.clone()
+    mask.apply(PlaneWave(second).generate_field(grid))
+
+    torch.testing.assert_close(mask._built_wavelengths, second.wavelengths)
+    assert not torch.equal(mask.complex_transmission, first_transfer)
+
+
 def test_mask_rejects_field_on_different_grid(optical_state):
     grid, _, _ = optical_state
     other_grid = Grid(7, 5, 0.2, 0.2, dtype=torch.float64)

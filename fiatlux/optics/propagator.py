@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from fiatlux.core.field import Field
 from fiatlux.core.grid import Grid
 from fiatlux.config.registry import register_type
+from fiatlux.optics.elements.base import validate_field_grid
 
 import torch
 
@@ -46,10 +47,21 @@ class MFTPropagator(Propagator):
         return torch.exp(-2j * torch.pi * torch.outer(x, u))  # (nx, mx) — 2D
 
     def apply(self, field: Field) -> Field:
+        if not isinstance(field, Field):
+            raise TypeError(
+                f"MFTPropagator expects a Field, got {type(field).__name__}."
+            )
         if field.grid.device != self.output_grid.device:
-            raise ValueError("MFT input and output grids must be on the same device.")
+            raise ValueError(
+                "MFTPropagator output_grid device must match the incoming field "
+                f"grid device; got {self.output_grid.device} and {field.grid.device}."
+            )
         if field.grid.dtype != self.output_grid.dtype:
-            raise ValueError("MFT input and output grids must have the same dtype.")
+            raise ValueError(
+                "MFTPropagator input and output grids must have the same dtype; "
+                "output_grid dtype must match the incoming field "
+                f"grid dtype; got {self.output_grid.dtype} and {field.grid.dtype}."
+            )
 
         x, y = field.grid.x, field.grid.y
         u, v = self.output_grid.x, self.output_grid.y
@@ -89,4 +101,5 @@ class IdentityPropagator(Propagator):
     grid: Grid
 
     def apply(self, field: Field) -> Field:
+        validate_field_grid(field, self.grid, "IdentityPropagator")
         return field
