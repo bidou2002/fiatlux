@@ -2,8 +2,6 @@ import math
 import torch
 from typing import Callable
 
-import matplotlib.pyplot as plt
-
 from fiatlux.optics.elements.deformable_mirror import DeformableMirror
 
 
@@ -60,6 +58,23 @@ class InteractionMatrix:
         self._measurement_dtype: torch.dtype | None = None
         self._measurement_device: torch.device | None = None
         self.matrix: torch.Tensor | None = None
+
+    @property
+    def singular_values(self) -> torch.Tensor:
+        """Complete singular-value spectrum from the latest inversion."""
+        if not hasattr(self, "S"):
+            raise RuntimeError("Call compute_control_matrix() first.")
+        return self.S
+
+    @property
+    def condition_number(self) -> float:
+        """Condition number of the retained singular subspace."""
+        if not hasattr(self, "retained_mode_indices"):
+            raise RuntimeError("Call compute_control_matrix() first.")
+        if self.effective_rank == 0:
+            return math.inf
+        retained = self.S[self.retained_mode_indices]
+        return (retained.max() / retained.min()).item()
 
     def _get_response(self, expected_shape: torch.Size | None = None) -> torch.Tensor:
         """Acquire and validate one measurement without changing its shape."""
@@ -198,40 +213,92 @@ class InteractionMatrix:
         )
         return self.control_matrix
 
-    def plot(self):
+    def plot_singular_values(self):
+        """Plot the full spectrum and mark the retained SVD modes."""
+        import matplotlib.pyplot as plt
 
-        plt.figure()
-        plt.plot(self.S)
-        plt.yscale("log")
-        plt.xlabel("Mode index")
-        plt.ylabel("Singular value")
-        plt.title("Singular values of the interaction matrix")
-        plt.grid()
-        plt.draw()
+        singular_values = self.singular_values.detach().cpu()
+        fig, ax = plt.subplots()
+        ax.semilogy(singular_values, marker="o", label="all modes")
+        if self.effective_rank:
+            indices = self.retained_mode_indices.detach().cpu()
+            ax.semilogy(
+                indices,
+                singular_values[indices],
+                linestyle="none",
+                marker="o",
+                label="retained",
+            )
+        ax.axhline(
+            self.singular_value_threshold.detach().cpu().item(),
+            color="tab:red",
+            linestyle="--",
+            label="threshold",
+        )
+        ax.set_xlabel("Mode index")
+        ax.set_ylabel("Singular value")
+        ax.set_title("Interaction-matrix singular values")
+        ax.grid(True)
+        ax.legend()
+        return fig, ax
 
-        N = self.dm._commands.numel()
-        n = torch.tensor(N**0.5).ceil().int().item()
+    def plot_modes(
+        self,
+        measurement_shape: tuple[int, ...] | torch.Size | None = None,
+        *,
+        max_modes: int | None = None,
+    ):
+        """Plot retained measurement modes as curves or 2-D images.
 
-        fig, axes = plt.subplots(n, n, figsize=(10, 10))
-        fig_out, axes_out = plt.subplots(n, n, figsize=(10, 10))
+        A one-dimensional measurement is plotted as a curve. A two-dimensional
+        measurement is displayed as an image. Higher-dimensional measurements
+        require the caller to provide a one- or two-dimensional display shape.
+        """
+        import matplotlib.pyplot as plt
 
-        n_reshape = int(self.control_matrix.shape[1] ** 0.5)
+        _ = self.singular_values
+        shape = self.measurement_shape if measurement_shape is None else measurement_shape
+        if shape is None:
+            shape = (self.matrix.shape[0],)
+        shape = tuple(shape)
+        if len(shape) not in (1, 2) or math.prod(shape) != self.matrix.shape[0]:
+            raise ValueError(
+                "measurement_shape must be one- or two-dimensional and contain "
+                f"{self.matrix.shape[0]} values."
+            )
+        if max_modes is not None and (
+            not isinstance(max_modes, int)
+            or isinstance(max_modes, bool)
+            or max_modes < 1
+        ):
+            raise ValueError("max_modes must be a positive integer or None.")
 
-        for i in range(N):
+        indices = self.retained_mode_indices
+        if max_modes is not None:
+            indices = indices[:max_modes]
+        n_plots = max(1, indices.numel())
+        n_columns = min(4, n_plots)
+        n_rows = math.ceil(n_plots / n_columns)
+        fig, axes = plt.subplots(
+            n_rows, n_columns, squeeze=False, figsize=(3 * n_columns, 3 * n_rows)
+        )
+        for ax in axes.flat:
+            ax.set_visible(False)
+        for ax, index in zip(axes.flat, indices.tolist()):
+            ax.set_visible(True)
+            mode = self.U[:, index].detach().cpu().reshape(shape)
+            if len(shape) == 1:
+                ax.plot(mode)
+                ax.set_xlabel("Measurement index")
+            else:
+                ax.imshow(mode.numpy())
+                ax.axis("off")
+            ax.set_title(f"Mode {index}")
+        fig.tight_layout()
+        return fig, axes
 
-            ax = axes[i // n, i % n]
-            ax_out = axes_out[i // n, i % n]
-
-            mode = self.U[:, i].reshape(n_reshape, n_reshape)
-            mode_in = self.matrix[:, i].reshape(n_reshape, n_reshape)
-
-            ax.imshow(mode_in)
-            ax.set_title(f"Mode {i}")
-            ax.axis("off")
-
-            ax_out.imshow(mode)
-            ax_out.set_title(f"Mode {i}")
-            ax_out.axis("off")
-
-        plt.tight_layout()
-        plt.draw()
+    def plot(self, measurement_shape=None, *, max_modes=None):
+        """Compatibility helper returning singular-value and mode figures."""
+        singular_figure = self.plot_singular_values()
+        mode_figure = self.plot_modes(measurement_shape, max_modes=max_modes)
+        return singular_figure, mode_figure

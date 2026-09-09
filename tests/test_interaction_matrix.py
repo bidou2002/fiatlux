@@ -188,3 +188,59 @@ def test_invalid_svd_filter_settings_are_rejected(kwargs):
 
     with pytest.raises(ValueError):
         calibration.compute_control_matrix(**kwargs)
+
+
+def test_svd_diagnostics_are_exposed():
+    calibration = calibration_from_matrix([[4.0, 0.0], [0.0, 2.0]])
+
+    calibration.compute_control_matrix()
+
+    torch.testing.assert_close(
+        calibration.singular_values, torch.tensor([4.0, 2.0], dtype=torch.float64)
+    )
+    assert calibration.condition_number == pytest.approx(2.0)
+
+
+def test_diagnostics_require_control_matrix_computation():
+    calibration = calibration_from_matrix(torch.eye(2))
+
+    with pytest.raises(RuntimeError, match="compute_control_matrix"):
+        _ = calibration.singular_values
+    with pytest.raises(RuntimeError, match="compute_control_matrix"):
+        _ = calibration.condition_number
+
+
+def test_plot_modes_supports_one_dimensional_measurements():
+    import matplotlib.pyplot as plt
+
+    calibration = calibration_from_matrix(
+        [[2.0, 0.0], [1.0, 1.0], [0.0, 2.0]]
+    )
+    calibration.measurement_shape = torch.Size([3])
+    calibration.compute_control_matrix()
+
+    figure, axes = calibration.plot_modes()
+
+    assert len(axes.flat[0].lines) == 1
+    plt.close(figure)
+
+
+def test_plot_modes_supports_explicit_rectangular_shape():
+    import matplotlib.pyplot as plt
+
+    calibration = calibration_from_matrix(torch.arange(12).reshape(6, 2))
+    calibration.compute_control_matrix()
+
+    figure, axes = calibration.plot_modes(measurement_shape=(2, 3))
+
+    assert axes.flat[0].images[0].get_array().shape == (2, 3)
+    plt.close(figure)
+
+
+@pytest.mark.parametrize("shape", [(2, 2), (1, 2, 3)])
+def test_plot_modes_rejects_incompatible_display_shape(shape):
+    calibration = calibration_from_matrix(torch.arange(12).reshape(6, 2))
+    calibration.compute_control_matrix()
+
+    with pytest.raises(ValueError, match="measurement_shape"):
+        calibration.plot_modes(measurement_shape=shape)
