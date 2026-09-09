@@ -75,17 +75,30 @@ class Field:
     # def is_frequency(self) -> bool:
     #     return isinstance(self.grid, FrequencyGrid)
 
-    def to(self, device: torch.device | str) -> Field:
-        """Return a new field with all tensor state moved to ``device``.
+    def to(
+        self,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> Field:
+        """Return a new field with coherent device and dtype state.
 
-        The complex-amplitude, wavelength and flux dtypes are preserved.
-        Neither this field nor its associated grid and spectrum are mutated.
+        A requested complex dtype is mapped to its corresponding real dtype
+        for coordinates, wavelengths and fluxes. Neither the source field nor
+        its associated grid and spectrum are mutated.
         """
-        device = torch.device(device)
+        amplitude_dtype = self.complex_amplitude.dtype if dtype is None else dtype
+        if amplitude_dtype in (torch.complex64, torch.float32):
+            real_dtype = torch.float32
+        elif amplitude_dtype in (torch.complex128, torch.float64):
+            real_dtype = torch.float64
+        else:
+            raise ValueError(
+                "Field dtype must be float32, float64, complex64 or complex128."
+            )
         return Field(
-            self.complex_amplitude.to(device),
-            self.grid.to(device),
-            self.spectrum.to(device),
+            self.complex_amplitude.to(device=device, dtype=amplitude_dtype),
+            self.grid.to(device=device, dtype=real_dtype),
+            self.spectrum.to(device=device, dtype=real_dtype),
         )
 
     def _validate_compatible_field(self, other: Field) -> None:
