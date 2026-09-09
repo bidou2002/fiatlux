@@ -96,7 +96,7 @@ def zernike(
             (npix - 1) / 2.0
         )
         y = x
-        xx, yy = torch.meshgrid(x, y)
+        xx, yy = torch.meshgrid(x, y, indexing="ij")
 
         rho = torch.sqrt(xx**2 + yy**2)
         theta = torch.arctan2(yy, xx)
