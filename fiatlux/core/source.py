@@ -1,6 +1,6 @@
-from dataclasses import dataclass, field
-from typing import Optional
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+import math
 
 import torch
 
@@ -20,8 +20,31 @@ class Source(ABC):
     def __init__(self, spectrum: Spectrum):
         self.spectrum = spectrum
 
-    def _get_fluxes(self, grid: Grid) -> torch.Tensor:
-        return self.spectrum.fluxes * grid.dx * grid.dy
+    def _normalize_spatial_amplitude(
+        self,
+        spatial_amplitude: torch.Tensor,
+        grid: Grid,
+        spectrum: Spectrum,
+    ) -> torch.Tensor:
+        """Normalize a spatial amplitude to each channel's photon flux.
+
+        The returned field satisfies
+        ``sum(abs(E[channel])**2) * dx * dy == spectrum.fluxes[channel]``.
+        """
+        integrated_intensity = (
+            spatial_amplitude.abs().square().sum() * grid.dx * grid.dy
+        )
+        if not torch.isfinite(integrated_intensity) or integrated_intensity <= 0:
+            raise ValueError("The source spatial profile must have finite positive power.")
+        if torch.any(spectrum.fluxes < 0) or not torch.isfinite(spectrum.fluxes).all():
+            raise ValueError("Spectrum fluxes must be finite and non-negative.")
+
+        channel_amplitudes = spectrum.fluxes.sqrt().to(
+            device=grid.device,
+            dtype=spatial_amplitude.real.dtype,
+        )
+        normalized_profile = spatial_amplitude / integrated_intensity.sqrt()
+        return channel_amplitudes[:, None, None] * normalized_profile
 
     @abstractmethod
     def generate_field(self, grid: Grid) -> Field: ...
@@ -42,10 +65,16 @@ class PlaneWave(Source):
         super().__init__(spectrum)
 
     def generate_field(self, grid: Grid) -> Field:
+        spectrum = self.spectrum.to(grid.device)
+        spatial_amplitude = torch.ones(
+            (grid.ny, grid.nx),
+            dtype=torch.complex64,
+            device=grid.device,
+        )
         return Field(
-            self._get_fluxes(grid=grid)[:, None, None] * torch.ones((grid.ny, grid.nx)),
+            self._normalize_spatial_amplitude(spatial_amplitude, grid, spectrum),
             grid,
-            self.spectrum,
+            spectrum,
         )
 
     @property
@@ -60,20 +89,23 @@ class GaussianSource(Source):
         spectrum: Spectrum,
         waist: float,
     ):
+        if not math.isfinite(waist) or waist <= 0:
+            raise ValueError("waist must be a positive finite length.")
         self.waist = waist
         super().__init__(spectrum)
 
     def generate_field(self, grid: Grid) -> Field:
         x, y = grid.meshgrid()
-        n_wavelengths = len(self.spectrum.wavelengths)
-
-        envelope = (
-            (torch.exp(-(x**2 + y**2) / self.waist**2))
-            .to(torch.complex64)
-            .unsqueeze(0)
-            .expand(n_wavelengths, -1, -1)
+        spectrum = self.spectrum.to(grid.device)
+        spatial_amplitude = torch.exp(
+            -(x**2 + y**2) / self.waist**2
+        ).to(torch.complex64)
+        amplitude = self._normalize_spatial_amplitude(
+            spatial_amplitude,
+            grid,
+            spectrum,
         )
-        return Field(envelope, grid, self.spectrum)
+        return Field(amplitude, grid, spectrum)
 
     @property
     def _symbol(self) -> str:
