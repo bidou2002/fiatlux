@@ -342,6 +342,20 @@ fiatlux/
 
 The separation between **physical fields**, **optical components**, and **system orchestration** is central to the Fiatlux 2.0 architecture.
 
+## Testing
+
+Install the development dependencies and run the complete core suite from the
+repository root:
+
+```bash
+python -m pip install pytest
+python -m pytest -q
+```
+
+The suite covers grids, fields, spectra, sources, masks, propagators, detectors,
+deformable mirrors, atmosphere/NCPA models, interaction matrices, configuration,
+and CPU/GPU consistency when CUDA is available.
+
 ## Maintenance policy
 
 - `fiatlux/` contains the supported package API.
