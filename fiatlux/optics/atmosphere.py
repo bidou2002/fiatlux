@@ -35,7 +35,7 @@ class AtmosphereModel(ABC):
         *,
         reference_wavelength: float,
         seed: int | None = None,
-        dtype: torch.dtype = torch.float32,
+        dtype: torch.dtype | None = None,
     ) -> None:
         if grid.nx < 2 or grid.ny < 2:
             raise ValueError("Atmospheric grids require nx >= 2 and ny >= 2.")
@@ -43,6 +43,7 @@ class AtmosphereModel(ABC):
             raise ValueError("Atmospheric grid spacings dx and dy must be positive.")
         if reference_wavelength <= 0:
             raise ValueError("reference_wavelength must be positive.")
+        dtype = grid.dtype if dtype is None else dtype
         if dtype not in (torch.float32, torch.float64):
             raise TypeError("dtype must be torch.float32 or torch.float64.")
 
@@ -165,7 +166,7 @@ class KolmogorovAtmosphereModel(AtmosphereModel):
         *,
         outer_scale: float | None = None,
         seed: int | None = None,
-        dtype: torch.dtype = torch.float32,
+        dtype: torch.dtype | None = None,
     ) -> None:
         if r0 <= 0:
             raise ValueError("r0 must be positive.")
@@ -235,7 +236,7 @@ class NCPAModel:
         spectral_index: float = 3.0,
         outer_scale: float | None = None,
         seed: int | None = None,
-        dtype: torch.dtype = torch.float32,
+        dtype: torch.dtype | None = None,
     ) -> None:
         if grid.nx < 2 or grid.ny < 2:
             raise ValueError("NCPA grids require nx >= 2 and ny >= 2.")
@@ -247,6 +248,7 @@ class NCPAModel:
             raise ValueError("spectral_index must be positive.")
         if outer_scale is not None and outer_scale <= 0:
             raise ValueError("outer_scale must be positive or None.")
+        dtype = grid.dtype if dtype is None else dtype
         if dtype not in (torch.float32, torch.float64):
             raise TypeError("dtype must be torch.float32 or torch.float64.")
 
