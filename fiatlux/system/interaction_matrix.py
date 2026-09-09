@@ -144,29 +144,59 @@ class InteractionMatrix:
         """Calibrate the central derivative around the reference commands."""
         return self._calibrate(central=True, verbose=verbose)
 
-    def compute_control_matrix(self, n_modes: int = None):
-        """
-        Computes the pseudo-inverse (control matrix) via SVD.
-        n_modes : number of singular modes to keep (truncated SVD).
-        Returns the control matrix of shape (n_actuators, n_response).
+    def compute_control_matrix(
+        self,
+        n_modes: int | None = None,
+        *,
+        rcond: float | None = None,
+        atol: float = 0.0,
+    ) -> torch.Tensor:
+        """Compute a filtered SVD pseudo-inverse.
+
+        Singular values must be larger than both ``atol`` and
+        ``rcond * S.max()``. When ``rcond`` is omitted, the same
+        dimension-scaled machine-precision default as a conventional
+        pseudo-inverse is used. ``n_modes`` can additionally cap the number
+        of retained modes, ordered from largest to smallest singular value.
         """
         if self.matrix is None:
             raise RuntimeError(
                 "Call calibrate_one_sided() or calibrate_push_pull() first."
             )
 
+        if n_modes is not None and (
+            not isinstance(n_modes, int)
+            or isinstance(n_modes, bool)
+            or n_modes < 1
+        ):
+            raise ValueError("n_modes must be a positive integer or None.")
+        for name, value in (("rcond", rcond), ("atol", atol)):
+            if value is not None and (not math.isfinite(value) or value < 0):
+                raise ValueError(f"{name} must be a finite non-negative value.")
+
         self.U, self.S, self.Vh = torch.linalg.svd(self.matrix, full_matrices=False)
+        if rcond is None:
+            rcond = max(self.matrix.shape) * torch.finfo(self.S.dtype).eps
 
+        relative_threshold = rcond * self.S.max()
+        self.singular_value_threshold = max(
+            torch.as_tensor(atol, device=self.S.device, dtype=self.S.dtype),
+            relative_threshold,
+        )
+        retained = self.S > self.singular_value_threshold
         if n_modes is not None:
-            self.U, self.S, self.Vh = (
-                self.U[:, :n_modes],
-                self.S[:n_modes],
-                self.Vh[:n_modes, :],
-            )
+            mode_cap = torch.arange(self.S.numel(), device=self.S.device) < n_modes
+            retained &= mode_cap
 
+        self.retained_mode_indices = torch.nonzero(retained, as_tuple=False).flatten()
+        self.effective_rank = int(self.retained_mode_indices.numel())
+
+        inverse_singular_values = torch.zeros_like(self.S)
+        inverse_singular_values[retained] = self.S[retained].reciprocal()
         self.control_matrix = (
-            self.Vh.T @ torch.diag(1.0 / self.S) @ self.U.T
-        )  # (n_actuators, n_response)
+            self.Vh.T @ torch.diag(inverse_singular_values) @ self.U.T
+        )
+        return self.control_matrix
 
     def plot(self):
 
