@@ -135,3 +135,56 @@ def test_legacy_calibration_method_names_are_removed():
 
     assert not hasattr(calibration, "measure")
     assert not hasattr(calibration, "push_pull")
+
+
+def calibration_from_matrix(matrix):
+    calibration, _, _, _ = make_linear_calibration()
+    calibration.matrix = torch.as_tensor(matrix, dtype=torch.float64)
+    return calibration
+
+
+def test_zero_singular_value_is_safely_discarded():
+    calibration = calibration_from_matrix([[2.0, 0.0], [0.0, 0.0]])
+
+    control = calibration.compute_control_matrix()
+
+    assert torch.isfinite(control).all()
+    torch.testing.assert_close(control, torch.tensor([[0.5, 0.0], [0.0, 0.0]], dtype=torch.float64))
+    assert calibration.effective_rank == 1
+    assert calibration.retained_mode_indices.tolist() == [0]
+
+
+def test_relative_threshold_discards_poorly_conditioned_mode():
+    calibration = calibration_from_matrix([[10.0, 0.0], [0.0, 1e-4]])
+
+    calibration.compute_control_matrix(rcond=1e-3)
+
+    assert calibration.effective_rank == 1
+    assert calibration.retained_mode_indices.tolist() == [0]
+    assert calibration.S.tolist() == pytest.approx([10.0, 1e-4])
+
+
+def test_absolute_threshold_and_mode_cap_are_combined():
+    calibration = calibration_from_matrix(torch.diag(torch.tensor([4.0, 2.0, 1.0])))
+
+    calibration.compute_control_matrix(n_modes=2, rcond=0.0, atol=1.5)
+
+    assert calibration.retained_mode_indices.tolist() == [0, 1]
+    assert calibration.effective_rank == 2
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"n_modes": 0},
+        {"n_modes": 1.5},
+        {"rcond": -1.0},
+        {"rcond": float("inf")},
+        {"atol": -1.0},
+    ],
+)
+def test_invalid_svd_filter_settings_are_rejected(kwargs):
+    calibration = calibration_from_matrix(torch.eye(2))
+
+    with pytest.raises(ValueError):
+        calibration.compute_control_matrix(**kwargs)
