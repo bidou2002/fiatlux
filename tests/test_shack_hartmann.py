@@ -7,7 +7,9 @@ from fiatlux import (
     Field,
     Grid,
     PlaneWave,
+    ShackHartmannImage,
     ShackHartmannLensletArray,
+    ShackHartmannSlopeEstimator,
     Spectrum,
 )
 from fiatlux.core.spectrum import Band
@@ -120,6 +122,101 @@ def test_pitch_and_registration_must_align_with_input_samples():
     with pytest.raises(ValueError, match="registration_x"):
         ShackHartmannLensletArray(
             grid, pitch=0.2, focal_length=1.0, registration_x=0.05
+        )
+
+
+def test_centroids_recover_known_xy_tilt_sign_and_scale():
+    wavelength = 500e-9
+    grid = Grid(24, 16, 0.1, 0.1, dtype=torch.float64)
+    field = monochromatic_field(grid, wavelength)
+    sensor = ShackHartmannLensletArray(grid, pitch=0.4, focal_length=2.0)
+    angle_x = wavelength / sensor.pitch
+    angle_y = -wavelength / sensor.pitch
+    x, y = grid.meshgrid()
+    tilted = Field(
+        field.complex_amplitude
+        * torch.exp(2j * math.pi * (angle_x * x + angle_y * y)[None] / wavelength),
+        grid,
+        field.spectrum,
+    )
+
+    measurement = ShackHartmannSlopeEstimator(
+        focal_length=sensor.focal_length
+    ).measure(sensor.propagate(tilted))
+    expected = torch.tensor([angle_x, angle_y], dtype=grid.dtype)
+    torch.testing.assert_close(
+        measurement.slopes,
+        expected.expand_as(measurement.slopes),
+        rtol=1e-12,
+        atol=1e-15,
+    )
+    assert measurement.slope_vector.shape == (2 * 4 * 6,)
+    torch.testing.assert_close(
+        measurement.slope_vector[:24], expected[0].expand(24)
+    )
+    torch.testing.assert_close(
+        measurement.slope_vector[24:], expected[1].expand(24)
+    )
+
+
+def test_reference_centroids_are_subtracted_and_invalid_lenslets_are_omitted():
+    grid = Grid(8, 8, 0.1, 0.1, dtype=torch.float64)
+    valid = torch.tensor([[True, False], [True, True]])
+    sensor = ShackHartmannLensletArray(
+        grid, pitch=0.4, focal_length=2.0, valid_subapertures=valid
+    )
+    image = sensor.propagate(monochromatic_field(grid))
+    reference = torch.zeros((2, 2, 2), dtype=grid.dtype)
+    reference[..., 0] = float(image.pixel_scale_x[0])
+
+    measurement = ShackHartmannSlopeEstimator(
+        focal_length=2.0, reference_centroids=reference
+    ).measure(image)
+    torch.testing.assert_close(
+        measurement.slopes[..., 0][valid],
+        torch.full((3,), -float(image.pixel_scale_x[0]) / 2, dtype=grid.dtype),
+    )
+    assert torch.equal(
+        measurement.slopes[~valid], torch.zeros((1, 2), dtype=grid.dtype)
+    )
+    assert measurement.slope_vector.shape == (6,)
+
+
+def test_polychromatic_centroid_uses_each_channel_physical_sampling():
+    scales = torch.tensor([1.0e-6, 2.0e-6, 3.0e-6], dtype=torch.float64)
+    amplitude = torch.zeros((3, 1, 1, 3, 3), dtype=torch.complex128)
+    # Equal photon flux in the +1 x pixel of every channel.
+    amplitude[:, 0, 0, 1, 2] = scales.reciprocal()
+    image = ShackHartmannImage(
+        complex_amplitude=amplitude,
+        wavelengths=torch.tensor([500e-9, 600e-9, 700e-9]),
+        pixel_scale_x=scales,
+        pixel_scale_y=scales,
+        valid_subapertures=torch.ones((1, 1), dtype=torch.bool),
+    )
+
+    measurement = ShackHartmannSlopeEstimator(focal_length=2.0).measure(image)
+    torch.testing.assert_close(
+        measurement.slopes[..., 0], torch.tensor([[1.0e-6]], dtype=torch.float64)
+    )
+
+
+def test_centroid_window_threshold_and_validation():
+    grid = Grid(8, 8, 0.1, 0.1)
+    sensor = ShackHartmannLensletArray(grid, pitch=0.4, focal_length=1.0)
+    image = sensor.propagate(monochromatic_field(grid))
+    measurement = ShackHartmannSlopeEstimator(
+        focal_length=1.0, window_radius=(1, 1), threshold=0.5
+    ).measure(image)
+    assert torch.equal(measurement.centroids, torch.zeros_like(measurement.centroids))
+
+    with pytest.raises(ValueError, match="window_radius"):
+        ShackHartmannSlopeEstimator(focal_length=1.0, window_radius=-1)
+    with pytest.raises(ValueError, match="threshold"):
+        ShackHartmannSlopeEstimator(focal_length=1.0, threshold=1.0)
+    with pytest.raises(ValueError, match="reference_centroids"):
+        ShackHartmannSlopeEstimator(focal_length=1.0).measure(
+            image, reference_centroids=torch.zeros(2, 2)
         )
 
 

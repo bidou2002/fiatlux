@@ -15,7 +15,12 @@ from .turbulence_validation import (
     spatial_structure_function,
     temporal_autocorrelation,
 )
-from .shack_hartmann import ShackHartmannImage, ShackHartmannLensletArray
+from .shack_hartmann import (
+    ShackHartmannImage,
+    ShackHartmannLensletArray,
+    ShackHartmannMeasurement,
+    ShackHartmannSlopeEstimator,
+)
 from .fatmoss import (
     FatmossAtmosphereModel,
     FatmossUnavailableError,
@@ -44,4 +49,6 @@ __all__ = [
     "temporal_autocorrelation",
     "ShackHartmannImage",
     "ShackHartmannLensletArray",
+    "ShackHartmannMeasurement",
+    "ShackHartmannSlopeEstimator",
 ]
