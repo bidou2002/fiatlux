@@ -9,6 +9,7 @@ from .propagator import (
     Propagator,
 )
 from .pupil_validation import PupilComparison, compare_pupil_masks
+from .fatmoss import FatmossAtmosphereModel, FatmossUnavailableError
 
 __all__ = [
     "ADCDispersionModel",
@@ -23,4 +24,6 @@ __all__ = [
     "Propagator",
     "PupilComparison",
     "compare_pupil_masks",
+    "FatmossAtmosphereModel",
+    "FatmossUnavailableError",
 ]

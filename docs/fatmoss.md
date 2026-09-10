@@ -1,0 +1,53 @@
+# Optional FATMOSS integration
+
+Fiatlux integrates [FATMOSS](https://github.com/EjjeSynho/FATMOSS) through a
+narrow optional adapter. Importing and using core Fiatlux does not import or
+require FATMOSS.
+
+The adapter currently targets the upstream `main` API at commit
+`12e608686dfc69955f722e2ee62455fcd3e32d2e`, in particular
+`PhaseScreensGenerator(...)` and `GetScreenByTimestep(timestep)`.
+
+## Installation
+
+FATMOSS does not currently publish an installable Python package. Clone it and
+make its source directory importable:
+
+```bash
+git clone https://github.com/EjjeSynho/FATMOSS.git
+export PYTHONPATH="$PWD/FATMOSS:$PYTHONPATH"
+```
+
+The upstream `settings.json` controls NumPy/CuPy execution and must remain next
+to the FATMOSS source files. Install its dependencies according to its README.
+
+## Constructing the adapter
+
+```python
+from fiatlux import FatmossAtmosphereModel, Grid
+
+grid = Grid(256, 256, 0.04, 0.04)
+model = FatmossAtmosphereModel.create(
+    grid,
+    time_step=1e-3,
+    batch_size=100,
+    n_cascades=3,
+    seed=42,
+)
+```
+
+Layers are added through `model.backend` using FATMOSS' current `Layer` API.
+The dedicated frozen-flow and multilayer issues will wrap that construction in
+Fiatlux-owned physical layer configurations.
+
+## Conventions
+
+- `Grid.dx`, `Grid.dy` and generator diameter `D`: metres.
+- `time_step`: seconds.
+- `reference_wavelength`: metres in Fiatlux; FATMOSS currently uses 500 nm.
+- upstream screens: nanometres of OPD in `(x, y)` order.
+- `sample_opd()` output: metres of OPD in Fiatlux `(ny, nx)` order.
+- the FATMOSS seed owns temporal reproducibility; a PyTorch generator is not
+  accepted by `sample_opd()`.
+
+No rescaling to a target RMS or modification of the FATMOSS PSD is performed.
