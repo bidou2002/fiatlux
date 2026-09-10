@@ -4,9 +4,14 @@ This document fixes the physical, numerical, and public API conventions for
 finite-distance scalar propagation in Fiatlux. Implementations and tests must
 follow this contract.
 
+This feature is additive. The existing `MFTPropagator` remains Fiatlux's
+default pupil-to-focal Fraunhofer propagator, with unchanged behavior and API.
+The term Fresnel below selects a finite-distance physical model; it does not
+replace or redefine Fraunhofer propagation.
+
 The executable companion notebook
 `tutorials/08_near_field_propagation_contract.ipynb` visualizes these choices
-and checks flux conservation, paraxial agreement, Gaussian-beam spreading, and
+and checks flux conservation, Gaussian-beam spreading, and
 the Fresnel sampling bound.
 
 ## Scope
@@ -14,14 +19,22 @@ the Fresnel sampling bound.
 The first implementation supports homogeneous free-space propagation between
 parallel planes with unchanged transverse sampling. It provides:
 
-- an exact scalar angular-spectrum propagator for propagating spatial
-  frequencies;
 - a paraxial Fresnel transfer-function propagator;
 - independent propagation of every wavelength channel;
 - rectangular grids, PyTorch autograd, and CPU/CUDA execution.
 
-Scaled Fresnel transforms, tilted planes, refractive media, vector fields, and
-non-uniform sampling are outside this first contract.
+Fresnel propagation by MFT, tilted planes, refractive media, vector fields,
+and non-uniform sampling are outside this first contract. A later Fresnel-MFT
+contract will allow an explicitly chosen output grid without conflating the
+physical Fresnel model with its numerical implementation.
+
+The intended propagation family is therefore:
+
+- `MFTPropagator`: existing and default Fraunhofer propagation;
+- `FresnelPropagator`: first finite-distance implementation, using FFTs on an
+  unchanged grid;
+- a future explicitly named Fresnel-MFT propagator for arbitrary output
+  sampling.
 
 ## Coordinates and sign convention
 
@@ -87,7 +100,8 @@ distance is explicitly deferred rather than supported accidentally.
 
 ## Output-grid contract
 
-Both initial near-field propagators are same-grid transfer-function methods.
+The initial near-field propagator is a same-grid Fresnel transfer-function
+method implemented with FFTs.
 Input and output have identical `nx`, `ny`, `dx`, `dy`, device, and
 real dtype. The propagator is constructed with that grid and rejects a field
 on any other grid.
@@ -96,39 +110,6 @@ This restriction is deliberate: arbitrary output sampling requires a scaled
 Fresnel transform with a different normalization and aliasing contract. Such a
 transform must be introduced as a separate propagator, not as an implicit
 resampling option.
-
-## Angular-spectrum method
-
-For wavelength λ,
-
-\[
- H_\mathrm{AS}(f_x,f_y;z)
- = \exp\!\left[
-   i\,2\pi z\sqrt{\lambda^{-2}-f_x^2-f_y^2}
- \right].
-\]
-
-The planned constructor is:
-
-```python
-AngularSpectrumPropagator(
-    distance: float,
-    grid: Grid,
-    *,
-    evanescent: Literal["discard", "decay"] = "discard",
-    bandlimit: bool = True,
-)
-```
-
-`evanescent="discard"` sets components with
-`f_x² + f_y² > 1/λ²` to zero. `"decay"` uses the physically decaying
-complex longitudinal wave number for positive propagation. Backward
-propagation with evanescent decay is rejected because it exponentially
-amplifies unresolved components.
-
-`bandlimit=True` applies the documented angular-spectrum anti-aliasing mask.
-Disabling it is an explicit expert choice and never suppresses the basic
-evanescent-frequency rule.
 
 ## Fresnel transfer-function method
 
@@ -170,7 +151,7 @@ distance. It is never converted silently into a warning or hidden resampling.
 
 ## Shared behavior
 
-Both classes inherit `NearFieldPropagator(distance, grid)`, expose
+The class inherits `NearFieldPropagator(distance, grid)`, exposes
 `output_grid == grid`, and implement `apply(field) -> Field`.
 
 They must:
@@ -191,12 +172,12 @@ The implementation is accepted only after quantitative tests cover:
 
 1. Gaussian-beam radius and curvature versus propagation distance;
 2. energy conservation;
-3. forward then backward recovery for propagating spatial frequencies;
-4. agreement of angular-spectrum and Fresnel propagation in a paraxial regime;
+3. forward then backward recovery for a correctly sampled field;
+4. Gaussian-beam complex field agreement, including radius and curvature;
 5. convergence towards Fraunhofer behavior at long distance using the
    appropriate far-field sampling;
 6. rectangular and odd/even grids;
 7. mono- and polychromatic fields;
 8. complex64/complex128 and CPU/CUDA;
 9. autograd through the input field;
-10. every sampling and evanescent-mode error path.
+10. every Fresnel sampling error path.
