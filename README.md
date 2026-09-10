@@ -331,6 +331,7 @@ A recommended learning path is:
 | `06_elt_pupil_from_harmoni.ipynb` | ELT pupil from HARMONI residual data |
 | `07_closed_loop_ao.ipynb` | End-to-end ZELDA adaptive-optics loop |
 | `08_near_field_propagation_contract.ipynb` | MFT/FFT propagation in Fraunhofer and Fresnel regimes |
+| `09_fresnel_physical_validation.ipynb` | Gaussian beam, far-field limit and Fresnel reversibility |
 
 ---
 
