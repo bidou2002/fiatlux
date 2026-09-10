@@ -32,7 +32,7 @@ from .system.interaction_matrix import InteractionMatrix
 
 from .optics.propagator import (
     Propagator,
-    NearFieldPropagator,
+    PropagationRegime,
     PropagationSamplingError,
     IdentityPropagator,
     MFTPropagator,
@@ -101,7 +101,7 @@ __all__ = [
     "InteractionMatrix",
     # Optics
     "Propagator",
-    "NearFieldPropagator",
+    "PropagationRegime",
     "PropagationSamplingError",
     "IdentityPropagator",
     "MFTPropagator",
