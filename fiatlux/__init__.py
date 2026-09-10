@@ -31,6 +31,7 @@ from .system.interaction_matrix import InteractionMatrix
 # =========================
 
 from .optics.propagator import (
+    FFTPropagator,
     Propagator,
     PropagationRegime,
     PropagationSamplingError,
@@ -101,6 +102,7 @@ __all__ = [
     "InteractionMatrix",
     # Optics
     "Propagator",
+    "FFTPropagator",
     "PropagationRegime",
     "PropagationSamplingError",
     "IdentityPropagator",

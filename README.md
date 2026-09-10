@@ -74,10 +74,12 @@ photon_rate_k = field.intensity()[k].sum() * field.grid.dx * field.grid.dy
 
 ### Fourier optics
 
-Fiatlux provides matrix Fourier transform propagation between arbitrarily sampled pupil and focal planes.
+Fiatlux provides MFT and FFT propagation in Fraunhofer and Fresnel regimes.
+Fraunhofer is the default. MFT supports arbitrarily sampled output planes;
+FFT uses its natural conjugate sampling.
 
 ```python
-from fiatlux.optics.propagator import MFTPropagator
+from fiatlux.optics.propagator import FFTPropagator, MFTPropagator
 ```
 
 Optical systems can mix propagation and optical elements in a single ordered sequence.
