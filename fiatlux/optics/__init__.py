@@ -9,6 +9,12 @@ from .propagator import (
     Propagator,
 )
 from .pupil_validation import PupilComparison, compare_pupil_masks
+from .turbulence_validation import (
+    estimate_translation,
+    spatial_periodogram,
+    spatial_structure_function,
+    temporal_autocorrelation,
+)
 from .fatmoss import (
     FatmossAtmosphereModel,
     FatmossUnavailableError,
@@ -31,4 +37,8 @@ __all__ = [
     "FatmossAtmosphereModel",
     "FatmossUnavailableError",
     "FrozenFlowLayer",
+    "estimate_translation",
+    "spatial_periodogram",
+    "spatial_structure_function",
+    "temporal_autocorrelation",
 ]
