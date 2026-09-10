@@ -85,6 +85,20 @@ jobs:
         run: |
           mkdir -p "${{ runner.temp }}/executed-notebooks"
           for notebook in tutorials/*.ipynb; do
+            python -m json.tool "$notebook" > /dev/null
+            ci_execute=$(python - "$notebook" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              metadata = json.load(stream).get("metadata", {})
+          print(str(metadata.get("fiatlux", {}).get("ci_execute", True)).lower())
+          PY
+            )
+            if [ "$ci_execute" != "true" ]; then
+              echo "Skipping optional tutorial: $notebook"
+              continue
+            fi
             jupyter nbconvert \
               --to notebook \
               --execute "$notebook" \
