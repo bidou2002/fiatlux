@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import math
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
@@ -22,6 +23,8 @@ class FatmossBackend(Protocol):
     def GetScreenByTimestep(self, timestep: int) -> Any: ...
 
     def AddLayer(self, layer: Any) -> None: ...
+
+    def reset(self, regenerate_layers: bool = True) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -165,13 +168,14 @@ class FatmossAtmosphereModel:
     def create_frozen_flow(
         cls,
         grid: Grid,
-        layers: list[FrozenFlowLayer] | tuple[FrozenFlowLayer, ...],
+        layers: Sequence[FrozenFlowLayer],
         *,
         time_step: float,
         batch_size: int = 100,
         n_cascades: int = 3,
         seed: int | None = None,
         reference_wavelength: float = 500e-9,
+        normalize_weights: bool = False,
         phase_generator_module: Any | None = None,
         layer_module: Any | None = None,
     ) -> FatmossAtmosphereModel:
@@ -180,6 +184,8 @@ class FatmossAtmosphereModel:
             raise ValueError("At least one frozen-flow layer is required.")
         if not all(isinstance(layer, FrozenFlowLayer) for layer in layers):
             raise TypeError("layers must contain FrozenFlowLayer instances.")
+        if not isinstance(normalize_weights, bool):
+            raise TypeError("normalize_weights must be a boolean.")
         model = cls.create(
             grid,
             time_step=time_step,
@@ -204,6 +210,8 @@ class FatmossAtmosphereModel:
                 "FATMOSS atmospheric_layer must expose Layer, vonKarmanPSD and SimpleBoiling."
             )
 
+        total_weight = sum(config.weight for config in layers)
+        weight_scale = 1.0 / total_weight if normalize_weights else 1.0
         wavelength_nm = reference_wavelength * 1e9
         for config in layers:
             spatial_psd = lambda frequency, c=config: von_karman(
@@ -211,7 +219,7 @@ class FatmossAtmosphereModel:
             )
             temporal_psd = lambda frequency: simple_boiling(frequency, grid.dx)
             backend_layer = layer_factory(
-                config.weight,
+                config.weight * weight_scale,
                 config.altitude,
                 config.wind_speed,
                 config.wind_direction,
@@ -280,6 +288,32 @@ class FatmossAtmosphereModel:
         if not isinstance(steps, int) or isinstance(steps, bool) or steps < 0:
             raise ValueError("steps must be a non-negative integer.")
         self.timestep += steps
+
+    def reset(self) -> None:
+        """Reset FATMOSS' seeded state and select the first physical instant."""
+        backend_reset = getattr(self.backend, "reset", None)
+        if not callable(backend_reset):
+            raise NotImplementedError("This FATMOSS backend does not support reset().")
+        backend_reset(regenerate_layers=True)
+        self.timestep = 0
+
+    def iter_opd(
+        self,
+        number: int | None = None,
+        *,
+        remove_piston: bool = True,
+    ) -> Iterator[torch.Tensor]:
+        """Yield screens lazily while retaining only FATMOSS' current batch."""
+        if number is not None and (
+            not isinstance(number, int) or isinstance(number, bool) or number < 0
+        ):
+            raise ValueError("number must be a non-negative integer or None.")
+        produced = 0
+        while number is None or produced < number:
+            screen = self.current_opd(remove_piston=remove_piston)
+            self.advance()
+            produced += 1
+            yield screen
 
     def sequence_opd(
         self, number: int, *, advance: bool = True, remove_piston: bool = True
