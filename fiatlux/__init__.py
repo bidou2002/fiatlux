@@ -48,7 +48,12 @@ from .optics.turbulence_validation import (
     spatial_structure_function,
     temporal_autocorrelation,
 )
-from .optics.shack_hartmann import ShackHartmannImage, ShackHartmannLensletArray
+from .optics.shack_hartmann import (
+    ShackHartmannImage,
+    ShackHartmannLensletArray,
+    ShackHartmannMeasurement,
+    ShackHartmannSlopeEstimator,
+)
 from .optics.fatmoss import (
     FatmossAtmosphereModel,
     FatmossUnavailableError,
@@ -140,6 +145,8 @@ __all__ = [
     "temporal_autocorrelation",
     "ShackHartmannImage",
     "ShackHartmannLensletArray",
+    "ShackHartmannMeasurement",
+    "ShackHartmannSlopeEstimator",
     # Elements
     "OpticalElement",
     "DeformableMirror",

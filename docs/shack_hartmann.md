@@ -63,3 +63,30 @@ subapertures without empirical renormalization.
 All lenslets and wavelength channels are transformed in batches. Dtype, device
 and autograd are preserved. Fiatlux `Field` currently has no additional
 arbitrary leading batch dimension.
+
+## Centroids and calibrated slopes
+
+`ShackHartmannSlopeEstimator` converts a `ShackHartmannImage` into a
+`ShackHartmannMeasurement`. It supports a rectangular centroid window and a
+relative threshold (a fraction of each spectral spot peak). For polychromatic
+data, it computes centroids using each wavelength's physical detector sampling
+before combining them with photon-flux weights.
+
+```python
+from fiatlux import ShackHartmannSlopeEstimator
+
+estimator = ShackHartmannSlopeEstimator(
+    focal_length=lenslets.focal_length,
+    window_radius=2,
+    threshold=0.05,
+    reference_centroids=reference_centroids,
+)
+measurement = estimator.measure(spots)
+```
+
+`measurement.centroids[..., 0]` and `[..., 1]` are detector positions in
+metres, ordered `(x, y)`. The reference-subtracted `measurement.slopes` use the
+same ordering and are small angles in radians. `measurement.slope_vector`
+contains only valid subapertures, ordered as all x slopes in row-major lenslet
+order followed by all y slopes in the same order. Empty or explicitly disabled
+subapertures return zero and are false in `valid_subapertures`.

@@ -59,6 +59,153 @@ class ShackHartmannImage:
         return flux.permute(0, 2, 1, 3).reshape(nly * spot_ny, nlx * spot_nx)
 
 
+@dataclass(frozen=True)
+class ShackHartmannMeasurement:
+    """Calibrated Shack-Hartmann centroids and wavefront slopes.
+
+    The last axis of ``centroids`` and ``slopes`` is ordered ``(x, y)``.
+    Centroids are detector-plane positions in metres and slopes are angles in
+    radians (dimensionless in SI). Invalid subapertures contain zeros and are
+    identified by ``valid_subapertures``.
+    """
+
+    centroids: torch.Tensor
+    reference_centroids: torch.Tensor
+    slopes: torch.Tensor
+    valid_subapertures: torch.Tensor
+
+    @property
+    def slope_vector(self) -> torch.Tensor:
+        """Return valid slopes as ``[x row-major, y row-major]``."""
+        valid = self.valid_subapertures
+        return torch.cat((self.slopes[..., 0][valid], self.slopes[..., 1][valid]))
+
+
+class ShackHartmannSlopeEstimator:
+    """Extract flux-weighted centroids and calibrated slopes from lenslet spots.
+
+    ``window_radius`` is an optional half-width in detector pixels, either one
+    integer for both axes or ``(y, x)``. ``threshold`` is a fraction of each
+    spectral spot's peak pixel flux. Centroids are first evaluated in physical
+    detector coordinates for every wavelength and then combined by spectral
+    flux; this is required because the natural pixel scale changes with
+    wavelength.
+    """
+
+    def __init__(
+        self,
+        *,
+        focal_length: float,
+        window_radius: int | tuple[int, int] | None = None,
+        threshold: float = 0.0,
+        reference_centroids: torch.Tensor | None = None,
+    ) -> None:
+        self.focal_length = _positive_finite(focal_length, "focal_length")
+        self.window_radius = self._window_radius(window_radius)
+        if (
+            not isinstance(threshold, (int, float))
+            or isinstance(threshold, bool)
+            or not math.isfinite(threshold)
+            or not 0 <= threshold < 1
+        ):
+            raise ValueError("threshold must be finite and in [0, 1).")
+        self.threshold = float(threshold)
+        if reference_centroids is not None and not isinstance(
+            reference_centroids, torch.Tensor
+        ):
+            raise TypeError("reference_centroids must be a torch.Tensor.")
+        self.reference_centroids = reference_centroids
+
+    @staticmethod
+    def _window_radius(
+        value: int | tuple[int, int] | None,
+    ) -> tuple[int, int] | None:
+        if value is None:
+            return None
+        if isinstance(value, int) and not isinstance(value, bool):
+            value = (value, value)
+        if (
+            not isinstance(value, tuple)
+            or len(value) != 2
+            or any(
+                not isinstance(v, int) or isinstance(v, bool) or v < 0
+                for v in value
+            )
+        ):
+            raise ValueError("window_radius must be a non-negative integer or (y, x).")
+        return value
+
+    def measure(
+        self,
+        image: ShackHartmannImage,
+        *,
+        reference_centroids: torch.Tensor | None = None,
+    ) -> ShackHartmannMeasurement:
+        """Measure centroids and reference-subtracted wavefront slopes."""
+        if not isinstance(image, ShackHartmannImage):
+            raise TypeError("image must be a ShackHartmannImage.")
+        flux = image.pixel_flux
+        _, nly, nlx, spot_ny, spot_nx = flux.shape
+        work = flux
+
+        if self.window_radius is not None:
+            radius_y, radius_x = self.window_radius
+            iy = torch.arange(spot_ny, device=flux.device)
+            ix = torch.arange(spot_nx, device=flux.device)
+            window = (
+                (iy[:, None] - spot_ny // 2).abs() <= radius_y
+            ) & ((ix[None, :] - spot_nx // 2).abs() <= radius_x)
+            work = work * window[None, None, None]
+
+        if self.threshold:
+            peak = work.amax(dim=(-2, -1), keepdim=True)
+            work = torch.where(work >= self.threshold * peak, work, 0)
+
+        x = (
+            torch.arange(spot_nx, device=flux.device, dtype=flux.dtype)
+            - spot_nx // 2
+        ) * image.pixel_scale_x[:, None]
+        y = (
+            torch.arange(spot_ny, device=flux.device, dtype=flux.dtype)
+            - spot_ny // 2
+        ) * image.pixel_scale_y[:, None]
+        total_flux = work.sum(dim=(0, -2, -1))
+        numerator_x = (work * x[:, None, None, None, :]).sum(dim=(0, -2, -1))
+        numerator_y = (work * y[:, None, None, :, None]).sum(dim=(0, -2, -1))
+        illuminated = total_flux > 0
+        safe_flux = torch.where(illuminated, total_flux, torch.ones_like(total_flux))
+        centroids = torch.stack(
+            (numerator_x / safe_flux, numerator_y / safe_flux), dim=-1
+        )
+
+        reference = reference_centroids
+        if reference is None:
+            reference = self.reference_centroids
+        expected = (nly, nlx, 2)
+        if reference is None:
+            reference = torch.zeros(expected, device=flux.device, dtype=flux.dtype)
+        elif tuple(reference.shape) != expected:
+            raise ValueError(
+                f"reference_centroids must have shape {expected}, got "
+                f"{tuple(reference.shape)}."
+            )
+        else:
+            reference = reference.to(device=flux.device, dtype=flux.dtype)
+
+        valid = image.valid_subapertures.to(device=flux.device) & illuminated
+        slopes = (centroids - reference) / self.focal_length
+        slopes = torch.where(valid[..., None], slopes, torch.zeros_like(slopes))
+        centroids = torch.where(
+            valid[..., None], centroids, torch.zeros_like(centroids)
+        )
+        return ShackHartmannMeasurement(
+            centroids=centroids,
+            reference_centroids=reference,
+            slopes=slopes,
+            valid_subapertures=valid,
+        )
+
+
 class ShackHartmannLensletArray:
     """Form independent focal spots behind a registered square lenslet array.
 
