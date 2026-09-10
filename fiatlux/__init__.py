@@ -42,6 +42,7 @@ from .optics.detector import Detector
 from .optics.adc import ADCDispersionModel
 from .optics.atmosphere import AtmosphereModel, KolmogorovAtmosphereModel, NCPAModel
 from .optics.pupil_validation import PupilComparison, compare_pupil_masks
+from .optics.fatmoss import FatmossAtmosphereModel, FatmossUnavailableError
 
 # =========================
 # Optical elements
@@ -119,6 +120,8 @@ __all__ = [
     "NCPAModel",
     "PupilComparison",
     "compare_pupil_masks",
+    "FatmossAtmosphereModel",
+    "FatmossUnavailableError",
     # Elements
     "OpticalElement",
     "DeformableMirror",
