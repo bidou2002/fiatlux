@@ -1,4 +1,5 @@
 import types
+from itertools import islice
 
 import numpy as np
 import pytest
@@ -25,18 +26,32 @@ class TranslatingBackend:
     def __init__(self, **kwargs):
         self.settings = kwargs
         self.layers = []
+        self.requested = []
+        self.reset_count = 0
         self.size = round(kwargs["D"] / kwargs["dx"])
 
     def AddLayer(self, layer):
         self.layers.append(layer)
 
     def GetScreenByTimestep(self, timestep):
+        self.requested.append(timestep)
         layer = self.layers[0]
         pixels = layer.wind_speed * self.settings["dt"] * timestep / self.settings["dx"]
         x = np.arange(self.size, dtype=float)[:, None]
         return np.cos(2 * np.pi * (x - pixels) / self.size) * np.ones(
             (1, self.size)
         )
+
+    def reset(self, regenerate_layers=True):
+        assert regenerate_layers is True
+        self.reset_count += 1
+
+
+class WeightedBackend(TranslatingBackend):
+    def GetScreenByTimestep(self, timestep):
+        self.requested.append(timestep)
+        integrated_nm = sum(layer.weight * layer.wind_speed for layer in self.layers)
+        return np.full((self.size, self.size), integrated_nm + timestep)
 
 
 def fake_layer_module():
@@ -233,3 +248,72 @@ def test_sequence_and_phase_queries_have_explicit_state_semantics():
 
     model.sequence_opd(3, advance=True)
     assert model.timestep == 3
+
+
+def test_multilayer_relative_weights_are_normalized_with_fatmoss_semantics():
+    grid = Grid(8, 8, 0.2, 0.2)
+    backend_holder = {}
+
+    def factory(**kwargs):
+        backend_holder["backend"] = WeightedBackend(**kwargs)
+        return backend_holder["backend"]
+
+    model = FatmossAtmosphereModel.create_frozen_flow(
+        grid,
+        [
+            FrozenFlowLayer(0.15, 25.0, 5.0, 0.0, weight=2.0, altitude=0.0),
+            FrozenFlowLayer(0.15, 25.0, 12.0, 90.0, weight=8.0, altitude=9000.0),
+        ],
+        time_step=0.001,
+        normalize_weights=True,
+        phase_generator_module=types.SimpleNamespace(PhaseScreensGenerator=factory),
+        layer_module=fake_layer_module(),
+    )
+
+    weights = [layer.weight for layer in model.backend.layers]
+    assert weights == pytest.approx([0.2, 0.8])
+    assert sum(weights) == pytest.approx(1.0)
+    assert [layer.altitude for layer in model.backend.layers] == [0.0, 9000.0]
+    assert [layer.wind_speed for layer in model.backend.layers] == [5.0, 12.0]
+    assert [layer.wind_direction for layer in model.backend.layers] == [0.0, 90.0]
+    expected_integrated_opd = (0.2 * 5.0 + 0.8 * 12.0) * 1e-9
+    assert model.current_opd(remove_piston=False).mean().item() == pytest.approx(
+        expected_integrated_opd
+    )
+
+
+def test_reset_is_deterministic_and_lazy_iteration_does_not_build_a_cube():
+    grid = Grid(8, 8, 0.2, 0.2)
+    backend = TranslatingBackend(
+        D=1.6,
+        dx=0.2,
+        dt=0.05,
+        batch_size=2,
+        n_cascades=1,
+        seed=4,
+        double_precision=False,
+    )
+    backend.AddLayer(types.SimpleNamespace(wind_speed=0.5))
+    model = FatmossAtmosphereModel(
+        grid, backend, advance_after_sample=False, time_step=0.05
+    )
+
+    reference = model.current_opd(remove_piston=False)
+    model.advance(37)
+    assert not torch.equal(model.current_opd(remove_piston=False), reference)
+    model.reset()
+    torch.testing.assert_close(model.current_opd(remove_piston=False), reference)
+    assert model.timestep == 0
+    assert backend.reset_count == 1
+
+    backend.requested.clear()
+    iterator = model.iter_opd(number=1_000_000, remove_piston=False)
+    first_three = list(islice(iterator, 3))
+    assert len(first_three) == 3
+    assert all(screen.dtype == grid.dtype for screen in first_three)
+    assert all(screen.device == grid.device for screen in first_three)
+    assert backend.requested == [0, 1, 2]
+    assert model.timestep == 3
+    next(iterator)
+    assert model.timestep == 4
+    assert backend.requested == [0, 1, 2, 3]

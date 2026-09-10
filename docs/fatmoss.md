@@ -75,6 +75,41 @@ same instant until `advance()` or `seek_time()` is called. This makes it possibl
 to propagate multiple wavelengths or optical branches through one atmosphere
 state without accidentally moving the turbulence between evaluations.
 
+## Multilayer profiles and long runs
+
+Pass several `FrozenFlowLayer` objects to combine their altitude, wind vector
+and relative amplitude. FATMOSS applies `weight` linearly to each OPD screen;
+it is therefore an OPD-amplitude weight, not a fraction of OPD variance or
+`Cn2`. Set `normalize_weights=True` to normalize arbitrary positive relative
+weights so that they sum to one before they are sent to FATMOSS:
+
+```python
+layers = [
+    FrozenFlowLayer(0.15, 25.0, 5.0, 0.0, weight=2, altitude=0),
+    FrozenFlowLayer(0.15, 25.0, 12.0, 90.0, weight=8, altitude=9000),
+]
+model = FatmossAtmosphereModel.create_frozen_flow(
+    grid, layers, time_step=1e-3, seed=42, normalize_weights=True
+)
+```
+
+For a long or unbounded simulation, iterate instead of allocating a temporal
+cube:
+
+```python
+for opd in model.iter_opd(number=1_000_000):
+    consume(opd)
+
+# Or omit number for an unbounded iterator.
+for opd in model.iter_opd():
+    consume(opd)
+```
+
+Each value yielded by `iter_opd()` advances the selected timestep once. Fiatlux
+does not retain the sequence; FATMOSS retains only its configured internal
+batch. `reset()` resets the backend to its original seed, regenerates its layers
+and returns the model to `t=0`.
+
 ## Conventions
 
 - `Grid.dx`, `Grid.dy` and generator diameter `D`: metres.
