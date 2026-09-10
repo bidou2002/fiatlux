@@ -54,6 +54,18 @@ class WeightedBackend(TranslatingBackend):
         return np.full((self.size, self.size), integrated_nm + timestep)
 
 
+class SeededBackend(TranslatingBackend):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._initial = np.random.default_rng(kwargs["seed"]).normal(
+            size=(self.size, self.size)
+        )
+
+    def GetScreenByTimestep(self, timestep):
+        self.requested.append(timestep)
+        return self._initial + timestep
+
+
 def fake_layer_module():
     def layer(*args):
         names = (
@@ -138,6 +150,16 @@ def test_factory_rejects_grids_unsupported_by_upstream():
     with pytest.raises(ValueError, match="square grid"):
         FatmossAtmosphereModel.create(
             Grid(8, 6, 0.25, 0.25), time_step=0.001, module=module
+        )
+
+
+def test_factory_rejects_an_upstream_internal_size_that_changes_the_grid():
+    backend = FakeBackend()
+    backend.N = 9
+    module = types.SimpleNamespace(PhaseScreensGenerator=lambda **kwargs: backend)
+    with pytest.raises(ValueError, match="internal grid of 9"):
+        FatmossAtmosphereModel.create(
+            Grid(8, 8, 0.25, 0.25), time_step=0.001, module=module
         )
 
 
@@ -317,3 +339,42 @@ def test_reset_is_deterministic_and_lazy_iteration_does_not_build_a_cube():
     next(iterator)
     assert model.timestep == 4
     assert backend.requested == [0, 1, 2, 3]
+
+
+def test_seeded_models_replay_but_independent_models_do_not_share_time_state():
+    grid = Grid(8, 8, 0.2, 0.2)
+    module = types.SimpleNamespace(PhaseScreensGenerator=SeededBackend)
+    layer_module = fake_layer_module()
+    config = [FrozenFlowLayer(0.15, 25.0, 1.0, 0.0)]
+    first = FatmossAtmosphereModel.create_frozen_flow(
+        grid,
+        config,
+        time_step=0.01,
+        seed=123,
+        phase_generator_module=module,
+        layer_module=layer_module,
+    )
+    second = FatmossAtmosphereModel.create_frozen_flow(
+        grid,
+        config,
+        time_step=0.01,
+        seed=123,
+        phase_generator_module=module,
+        layer_module=layer_module,
+    )
+    different = FatmossAtmosphereModel.create_frozen_flow(
+        grid,
+        config,
+        time_step=0.01,
+        seed=124,
+        phase_generator_module=module,
+        layer_module=layer_module,
+    )
+
+    reference = first.current_opd(remove_piston=False)
+    torch.testing.assert_close(second.current_opd(remove_piston=False), reference)
+    assert not torch.equal(different.current_opd(remove_piston=False), reference)
+    first.advance(7)
+    assert second.timestep == 0
+    first.reset()
+    torch.testing.assert_close(first.current_opd(remove_piston=False), reference)

@@ -42,6 +42,12 @@ from .optics.detector import Detector
 from .optics.adc import ADCDispersionModel
 from .optics.atmosphere import AtmosphereModel, KolmogorovAtmosphereModel, NCPAModel
 from .optics.pupil_validation import PupilComparison, compare_pupil_masks
+from .optics.turbulence_validation import (
+    estimate_translation,
+    spatial_periodogram,
+    spatial_structure_function,
+    temporal_autocorrelation,
+)
 from .optics.fatmoss import (
     FatmossAtmosphereModel,
     FatmossUnavailableError,
@@ -127,6 +133,10 @@ __all__ = [
     "FatmossAtmosphereModel",
     "FatmossUnavailableError",
     "FrozenFlowLayer",
+    "estimate_translation",
+    "spatial_periodogram",
+    "spatial_structure_function",
+    "temporal_autocorrelation",
     # Elements
     "OpticalElement",
     "DeformableMirror",

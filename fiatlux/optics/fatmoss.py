@@ -155,6 +155,14 @@ class FatmossAtmosphereModel:
             seed=seed,
             double_precision=grid.dtype == torch.float64,
         )
+        backend_size = getattr(backend, "N", grid.nx)
+        if backend_size != grid.nx:
+            raise ValueError(
+                "FATMOSS selected an internal grid of "
+                f"{backend_size} pixels for the requested {grid.nx}. Choose a "
+                "grid size compatible with n_cascades (for example 135 pixels "
+                "for three cascades)."
+            )
         return cls(
             grid,
             backend,

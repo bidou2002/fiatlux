@@ -26,7 +26,7 @@ to the FATMOSS source files. Install its dependencies according to its README.
 ```python
 from fiatlux import FatmossAtmosphereModel, Grid
 
-grid = Grid(256, 256, 0.04, 0.04)
+grid = Grid(135, 135, 0.04, 0.04)
 model = FatmossAtmosphereModel.create(
     grid,
     time_step=1e-3,
@@ -35,6 +35,11 @@ model = FatmossAtmosphereModel.create(
     seed=42,
 )
 ```
+
+FATMOSS uses odd grids and powers of three for its cascades. The adapter checks
+the resulting upstream `N` immediately; for example, 135 pixels is compatible
+with three cascades. An incompatible request fails at construction instead of
+returning a differently shaped screen later.
 
 ## Frozen-flow sequences
 
@@ -109,6 +114,27 @@ Each value yielded by `iter_opd()` advances the selected timestep once. Fiatlux
 does not retain the sequence; FATMOSS retains only its configured internal
 batch. `reset()` resets the backend to its original seed, regenerates its layers
 and returns the model to `t=0`.
+
+## Closed-loop cadence
+
+Keep the atmosphere fixed throughout one complete sensing-and-control
+iteration, then advance it exactly once:
+
+```python
+atmosphere = Atmosphere(grid, model, recompute=True)
+model.reset()
+
+for _ in range(n_iterations):
+    wfs_image = acquire_wfs_image()
+    update_dm(wfs_image)
+    model.advance()
+```
+
+During interaction-matrix calibration, do not call `advance()`. Call `reset()`
+after calibration so the science loop starts reproducibly at `t=0`. The
+[`temporal turbulence tutorial`](../tutorials/10_fatmoss_temporal_turbulence.ipynb)
+contains the spatial and temporal validation plots and an executable optical
+element example.
 
 ## Conventions
 
