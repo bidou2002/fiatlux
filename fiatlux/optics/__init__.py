@@ -2,7 +2,7 @@ from .adc import ADCDispersionModel
 from .atmosphere import AtmosphereModel, KolmogorovAtmosphereModel, NCPAModel
 from .detector import Detector
 from .propagator import (
-    NearFieldPropagator,
+    PropagationRegime,
     PropagationSamplingError,
     Propagator,
 )
@@ -13,7 +13,7 @@ __all__ = [
     "KolmogorovAtmosphereModel",
     "NCPAModel",
     "Detector",
-    "NearFieldPropagator",
+    "PropagationRegime",
     "PropagationSamplingError",
     "Propagator",
 ]
