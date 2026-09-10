@@ -15,14 +15,14 @@ and checks MFT/FFT agreement on their common sampling.
 
 ## Public API
 
-The intended API is:
+The public API is:
 
 ```python
-MFTPropagator(..., propagation="fraunhofer")
-MFTPropagator(..., propagation="fresnel", distance=z)
+MFTPropagator(focal_length=f, output_grid=grid)
+MFTPropagator(output_grid=grid, propagation="fresnel", distance=z)
 
-FFTPropagator(..., propagation="fraunhofer")
-FFTPropagator(..., propagation="fresnel", distance=z)
+FFTPropagator(focal_length=f)
+FFTPropagator(propagation="fresnel", distance=z)
 ```
 
 `propagation` accepts the public `PropagationRegime` values `FRAUNHOFER` and
@@ -45,15 +45,13 @@ input with `nx`, `dx` and propagation scale `q`, its output sampling is
 \]
 
 Here `q` is the focal length for Fraunhofer propagation through a lens and the
-propagation distance for the single-transform Fresnel formulation. An
-incompatible user-supplied FFT output grid raises `PropagationSamplingError`;
-it is never silently resampled.
+propagation distance for the single-transform Fresnel formulation. The FFT
+propagator constructs this grid explicitly and never silently resamples it.
 
-Because the natural FFT grid depends on wavelength, a polychromatic FFT needs
-an explicit sampling policy. The first implementation may either return a
-per-wavelength grid representation or reject incompatible multi-wavelength
-requests with an actionable error. It must not label chromatically different
-physical coordinates with one common grid.
+Because the natural FFT grid depends on wavelength and `Field` currently owns
+one spatial grid, `FFTPropagator` accepts monochromatic fields. A polychromatic
+request raises `PropagationSamplingError` and points users to `MFTPropagator`
+for propagation onto a common physical grid.
 
 ## Coordinates and Fourier convention
 
