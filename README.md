@@ -328,7 +328,7 @@ A recommended learning path is:
 | `05_interaction_matrix_modal.ipynb` | Push-pull calibration and control matrix |
 | `06_elt_pupil_from_harmoni.ipynb` | ELT pupil from HARMONI residual data |
 | `07_closed_loop_ao.ipynb` | End-to-end ZELDA adaptive-optics loop |
-| `08_near_field_propagation_contract.ipynb` | Fresnel propagation conventions and validation |
+| `08_near_field_propagation_contract.ipynb` | MFT/FFT propagation in Fraunhofer and Fresnel regimes |
 
 ---
 
