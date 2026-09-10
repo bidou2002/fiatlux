@@ -41,6 +41,7 @@ from .optics.propagator import (
 from .optics.detector import Detector
 from .optics.adc import ADCDispersionModel
 from .optics.atmosphere import AtmosphereModel, KolmogorovAtmosphereModel, NCPAModel
+from .optics.pupil_validation import PupilComparison, compare_pupil_masks
 
 # =========================
 # Optical elements
@@ -116,6 +117,8 @@ __all__ = [
     "AtmosphereModel",
     "KolmogorovAtmosphereModel",
     "NCPAModel",
+    "PupilComparison",
+    "compare_pupil_masks",
     # Elements
     "OpticalElement",
     "DeformableMirror",

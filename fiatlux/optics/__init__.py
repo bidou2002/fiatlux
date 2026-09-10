@@ -8,6 +8,7 @@ from .propagator import (
     PropagationSamplingError,
     Propagator,
 )
+from .pupil_validation import PupilComparison, compare_pupil_masks
 
 __all__ = [
     "ADCDispersionModel",
@@ -20,4 +21,6 @@ __all__ = [
     "PropagationRegime",
     "PropagationSamplingError",
     "Propagator",
+    "PupilComparison",
+    "compare_pupil_masks",
 ]
