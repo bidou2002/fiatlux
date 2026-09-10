@@ -1,183 +1,147 @@
-# Near-field propagation contract
+# Fourier propagation contract
 
-This document fixes the physical, numerical, and public API conventions for
-finite-distance scalar propagation in Fiatlux. Implementations and tests must
-follow this contract.
+This document separates two independent choices in Fiatlux propagation:
 
-This feature is additive. The existing `MFTPropagator` remains Fiatlux's
-default pupil-to-focal Fraunhofer propagator, with unchanged behavior and API.
-The term Fresnel below selects a finite-distance physical model; it does not
-replace or redefine Fraunhofer propagation.
+1. the numerical Fourier transform: matrix Fourier transform (MFT) or FFT;
+2. the physical approximation: Fraunhofer or Fresnel.
+
+All four combinations are supported by the design. Fraunhofer is the default
+regime for both numerical methods. The existing `MFTPropagator` Fraunhofer
+behavior remains backward compatible.
 
 The executable companion notebook
-`tutorials/08_near_field_propagation_contract.ipynb` visualizes these choices
-and checks flux conservation, Gaussian-beam spreading, and
-the Fresnel sampling bound.
+`tutorials/08_near_field_propagation_contract.ipynb` evaluates the four cases
+and checks MFT/FFT agreement on their common sampling.
 
-## Scope
+## Public API
 
-The first implementation supports homogeneous free-space propagation between
-parallel planes with unchanged transverse sampling. It provides:
-
-- a paraxial Fresnel transfer-function propagator;
-- independent propagation of every wavelength channel;
-- rectangular grids, PyTorch autograd, and CPU/CUDA execution.
-
-Fresnel propagation by MFT, tilted planes, refractive media, vector fields,
-and non-uniform sampling are outside this first contract. A later Fresnel-MFT
-contract will allow an explicitly chosen output grid without conflating the
-physical Fresnel model with its numerical implementation.
-
-The intended propagation family is therefore:
-
-- `MFTPropagator`: existing and default Fraunhofer propagation;
-- `FresnelPropagator`: first finite-distance implementation, using FFTs on an
-  unchanged grid;
-- a future explicitly named Fresnel-MFT propagator for arbitrary output
-  sampling.
-
-## Coordinates and sign convention
-
-Fields use the existing Fiatlux array convention
-`(n_wavelengths, ny, nx)`. The x coordinate is the last array axis and y is
-the penultimate axis. Both are expressed in metres and follow `Grid`'s
-centred coordinate convention.
-
-Fiatlux adopts the time convention
-
-\[
-    \mathcal{E}(x,y,z,t) = E(x,y,z)\,e^{-i\omega t}.
-\]
-
-A plane wave travelling towards positive z therefore accumulates
-`exp(+i k_z z)`. A positive propagation distance moves the field forward
-along positive z; a negative distance performs backward propagation. A zero
-distance is an exact identity.
-
-The continuous transverse Fourier transform is
-
-\[
- \widehat E(f_x,f_y)
- = \iint E(x,y)\,
-   e^{-i2\pi(f_xx+f_yy)}\,dx\,dy,
-\]
-
-with spatial frequencies in cycles per metre. Implementations using
-`torch.fft` must account explicitly for the centred spatial grid with
-`ifftshift` before the forward FFT and `fftshift` after the inverse FFT.
-
-## Field normalization and units
-
-Spatial-plane complex amplitude retains the Fiatlux unit
-`sqrt(photons / s / m²)`. Lossless propagation preserves
-
-\[
-    \sum |E|^2\,dx\,dy
-\]
-
-up to numerical precision. Transfer-function propagation therefore uses
-unitary discrete FFT normalization (`norm="ortho"`) and does not introduce
-an empirical amplitude factor.
-
-The absolute carrier phase `exp(i 2π z / wavelength)` is retained. Tests that
-only concern intensity may ignore a spatially constant phase, but complex
-field comparisons may not silently remove it.
-
-## Wavelength, dtype, device, and gradients
-
-Each spectral channel uses its own wavelength and transfer function while
-preserving wavelength order and spectral flux metadata.
-
-- float32 grids and spectra produce complex64 fields;
-- float64 grids and spectra produce complex128 fields;
-- all intermediate tensors are created on the field device;
-- no NumPy conversion is allowed in the numerical path;
-- gradients must propagate through the input complex amplitude and distance
-  whenever the distance is represented by a tensor in a future extension.
-
-The initial public API accepts distance as a Python real number. Trainable
-distance is explicitly deferred rather than supported accidentally.
-
-## Output-grid contract
-
-The initial near-field propagator is a same-grid Fresnel transfer-function
-method implemented with FFTs.
-Input and output have identical `nx`, `ny`, `dx`, `dy`, device, and
-real dtype. The propagator is constructed with that grid and rejects a field
-on any other grid.
-
-This restriction is deliberate: arbitrary output sampling requires a scaled
-Fresnel transform with a different normalization and aliasing contract. Such a
-transform must be introduced as a separate propagator, not as an implicit
-resampling option.
-
-## Fresnel transfer-function method
-
-The paraxial transfer function is
-
-\[
- H_\mathrm{F}(f_x,f_y;z)
- = e^{i2\pi z/\lambda}
-   e^{-i\pi\lambda z(f_x^2+f_y^2)}.
-\]
-
-The planned constructor is:
+The intended API is:
 
 ```python
-FresnelPropagator(
-    distance: float,
-    grid: Grid,
-    *,
-    check_sampling: bool = True,
-)
+MFTPropagator(..., propagation="fraunhofer")
+MFTPropagator(..., propagation="fresnel", distance=z)
+
+FFTPropagator(..., propagation="fraunhofer")
+FFTPropagator(..., propagation="fresnel", distance=z)
 ```
 
-The method assumes paraxial content
-`lambda² (f_x² + f_y²) << 1`. With sampling checks enabled, the sampled
-transfer-function phase must not change by more than π between adjacent
-frequency bins at either Nyquist edge. The conservative axis-wise condition is
+`propagation` accepts the public `PropagationRegime` values `FRAUNHOFER` and
+`FRESNEL`, as well as their lower-case string values. Omitting it selects
+Fraunhofer. Implementations must not infer the regime from the transform
+method.
+
+## Transform methods and output sampling
+
+MFT evaluates the Fourier integral on an explicitly supplied output grid. It
+is appropriate for a cropped focal region, deliberate oversampling, and
+rectangular input or output planes.
+
+FFT evaluates the same Fourier integral on its natural conjugate grid. For an
+input with `nx`, `dx` and propagation scale `q`, its output sampling is
 
 \[
- |z| \leq
- \min\!\left(
-   \frac{n_x\,dx^2}{\lambda},
-   \frac{n_y\,dy^2}{\lambda}
+    dx_2 = \frac{\lambda q}{n_x dx_1}, \qquad
+    dy_2 = \frac{\lambda q}{n_y dy_1}.
+\]
+
+Here `q` is the focal length for Fraunhofer propagation through a lens and the
+propagation distance for the single-transform Fresnel formulation. An
+incompatible user-supplied FFT output grid raises `PropagationSamplingError`;
+it is never silently resampled.
+
+Because the natural FFT grid depends on wavelength, a polychromatic FFT needs
+an explicit sampling policy. The first implementation may either return a
+per-wavelength grid representation or reject incompatible multi-wavelength
+requests with an actionable error. It must not label chromatically different
+physical coordinates with one common grid.
+
+## Coordinates and Fourier convention
+
+Fields have shape `(n_wavelengths, ny, nx)`. The x coordinate is the last axis
+and y is the penultimate axis. Coordinates are in metres and follow `Grid`'s
+centred convention.
+
+Fiatlux uses
+
+\[
+    \mathcal E(x,y,z,t)=E(x,y,z)e^{-i\omega t}
+\]
+
+and the continuous Fourier transform
+
+\[
+ \widehat E(f_x,f_y)=\iint E(x,y)
+ e^{-i2\pi(f_xx+f_yy)}\,dx\,dy.
+\]
+
+A wave travelling towards positive z accumulates positive propagation phase.
+FFT implementations must handle the centred grid explicitly with shifts.
+
+## Fraunhofer regime (default)
+
+Fraunhofer propagation evaluates the Fourier transform of the input field:
+
+\[
+ E_2(x_2,y_2) \propto
+ \widehat E_1\!\left(
+   \frac{x_2}{\lambda q},
+   \frac{y_2}{\lambda q}
  \right).
 \]
 
-Violation raises `PropagationSamplingError` with the wavelength and limiting
-distance. It is never converted silently into a warning or hidden resampling.
-`check_sampling=False` is an explicit expert override.
+The MFT version evaluates this expression on `output_grid`. The FFT version
+evaluates it on the natural conjugate grid. Fiatlux's existing focal-plane MFT
+phase and normalization convention remains the backward-compatible reference.
 
-## Shared behavior
+## Fresnel regime
 
-The class inherits `NearFieldPropagator(distance, grid)`, exposes
-`output_grid == grid`, and implement `apply(field) -> Field`.
+For signed non-zero distance z, the single-transform Fresnel formulation is
 
-They must:
+\[
+ E_2(x_2,y_2)=\frac{e^{ikz}}{i\lambda z}
+ e^{\frac{ik}{2z}(x_2^2+y_2^2)}
+ \mathcal F\!\left\{
+ E_1(x_1,y_1)e^{\frac{ik}{2z}(x_1^2+y_1^2)}
+ \right\}_{f_x=x_2/(\lambda z),\,f_y=y_2/(\lambda z)}.
+\]
 
-- reject non-finite distances;
-- reject incompatible field grids with expected and actual sampling details;
-- return an exact equivalent field at zero distance;
-- preserve shape, spectrum object semantics, dtype, device, and differentiability;
-- cache only tensors whose validity includes grid, wavelength, dtype, device,
-  distance, and method options.
+MFT and FFT differ only in how this Fourier transform is evaluated. Both must
+use the same input and output quadratic phases, global phase, physical
+normalization, and sign convention.
 
-Method-specific invalid sampling raises `PropagationSamplingError`, a
-subclass of `ValueError`.
+The MFT version accepts an explicit output grid. The FFT version uses its
+natural Fresnel output grid. Zero distance returns an exact equivalent field
+without evaluating the singular formula. Non-finite distance and a Fresnel
+request without distance are rejected.
+
+## Units, dtype, device, and gradients
+
+Spatial-plane complex amplitude uses `sqrt(photons / s / m²)`. Correctly
+sampled lossless propagation preserves
+
+\[
+    \sum |E|^2\,dx\,dy.
+\]
+
+- float32 real quantities produce complex64 fields;
+- float64 real quantities produce complex128 fields;
+- tensors are created on the field device;
+- no NumPy conversion occurs in the propagation path;
+- wavelength order and spectrum metadata are preserved;
+- gradients propagate through the input complex amplitude.
 
 ## Validation matrix
 
-The implementation is accepted only after quantitative tests cover:
+Production implementations are accepted only after tests cover:
 
-1. Gaussian-beam radius and curvature versus propagation distance;
-2. energy conservation;
-3. forward then backward recovery for a correctly sampled field;
-4. Gaussian-beam complex field agreement, including radius and curvature;
-5. convergence towards Fraunhofer behavior at long distance using the
-   appropriate far-field sampling;
-6. rectangular and odd/even grids;
-7. mono- and polychromatic fields;
-8. complex64/complex128 and CPU/CUDA;
-9. autograd through the input field;
-10. every Fresnel sampling error path.
+1. the four MFT/FFT × Fraunhofer/Fresnel combinations;
+2. Fraunhofer as the default for both methods;
+3. MFT/FFT complex-field agreement on the natural FFT grid;
+4. backward compatibility of existing Fraunhofer MFT results;
+5. Fresnel Gaussian-beam radius and curvature;
+6. integrated-flux conservation;
+7. signed distance and zero-distance semantics;
+8. rectangular and odd/even grids;
+9. mono- and polychromatic sampling behavior;
+10. complex64/complex128, CPU/CUDA, and autograd;
+11. invalid distance and incompatible-grid error paths.
