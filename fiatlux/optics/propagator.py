@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import math
 
 from fiatlux.core.field import Field
 from fiatlux.core.grid import Grid
@@ -16,6 +17,42 @@ class Propagator(ABC):
     wavelength ordering, spectral flux metadata, device, compatible precision,
     and the leading ``n_wavelengths`` dimension.
     """
+
+
+class PropagationSamplingError(ValueError):
+    """A propagation request violates a documented sampling condition."""
+
+
+class NearFieldPropagator(Propagator, ABC):
+    """Base contract for same-grid finite-distance free-space propagation.
+
+    Parameters
+    ----------
+    distance
+        Signed axial propagation distance in metres. Positive values propagate
+        forward, negative values propagate backward, and zero is an exact
+        identity operation.
+    grid
+        Spatial grid shared by the input and output planes.
+    """
+
+    def __init__(self, distance: float, grid: Grid) -> None:
+        if not isinstance(distance, (int, float)) or isinstance(distance, bool):
+            raise TypeError("distance must be a real number in metres.")
+        if not math.isfinite(distance):
+            raise ValueError("distance must be finite.")
+        if not isinstance(grid, Grid):
+            raise TypeError("grid must be a fiatlux Grid.")
+        self.distance = float(distance)
+        self.grid = grid
+
+    @property
+    def output_grid(self) -> Grid:
+        """The unchanged transverse sampling grid of the output plane."""
+        return self.grid
+
+    def _validate_input(self, field: Field) -> None:
+        validate_field_grid(field, self.grid, self.__class__.__name__)
 
 
 @dataclass
