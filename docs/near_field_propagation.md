@@ -4,6 +4,11 @@ This document fixes the physical, numerical, and public API conventions for
 finite-distance scalar propagation in Fiatlux. Implementations and tests must
 follow this contract.
 
+The executable companion notebook
+`tutorials/08_near_field_propagation_contract.ipynb` visualizes these choices
+and checks flux conservation, paraxial agreement, Gaussian-beam spreading, and
+the Fresnel sampling bound.
+
 ## Scope
 
 The first implementation supports homogeneous free-space propagation between
