@@ -7,7 +7,7 @@ the dependency set declared by the `tutorials` extra:
 python -m pip install -e '.[tutorials]'
 ```
 
-Notebooks 00–05 and 07 are self-contained and must execute independently from
+Notebooks 00–05 and 07–08 are self-contained and must execute independently from
 a clean kernel. Notebook 07 demonstrates a complete ZELDA closed loop, from
 interaction-matrix calibration to the converged residual OPD. Continuous
 integration executes each notebook in a separate kernel, so variables and

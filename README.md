@@ -327,6 +327,8 @@ A recommended learning path is:
 | `04_zelda.ipynb` | ZELDA phase-mask wavefront sensing |
 | `05_interaction_matrix_modal.ipynb` | Push-pull calibration and control matrix |
 | `06_elt_pupil_from_harmoni.ipynb` | ELT pupil from HARMONI residual data |
+| `07_closed_loop_ao.ipynb` | End-to-end ZELDA adaptive-optics loop |
+| `08_near_field_propagation_contract.ipynb` | MFT/FFT propagation in Fraunhofer and Fresnel regimes |
 
 ---
 
@@ -359,6 +361,8 @@ The separation between **physical fields**, **optical components**, and **system
 
 The exact axis, shape, unit, device, dtype, element, and propagation invariants
 are specified in the [core API contracts](docs/core_contracts.md).
+The conventions and planned public API for finite-distance propagation are
+specified in the [near-field propagation contract](docs/near_field_propagation.md).
 
 ## Testing
 

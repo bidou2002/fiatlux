@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import Enum
 
 from fiatlux.core.field import Field
 from fiatlux.core.grid import Grid
@@ -16,6 +17,17 @@ class Propagator(ABC):
     wavelength ordering, spectral flux metadata, device, compatible precision,
     and the leading ``n_wavelengths`` dimension.
     """
+
+
+class PropagationSamplingError(ValueError):
+    """A propagation request violates a documented sampling condition."""
+
+
+class PropagationRegime(str, Enum):
+    """Physical approximation used independently of the numerical transform."""
+
+    FRAUNHOFER = "fraunhofer"
+    FRESNEL = "fresnel"
 
 
 @dataclass

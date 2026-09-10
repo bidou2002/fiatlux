@@ -30,7 +30,13 @@ from .system.interaction_matrix import InteractionMatrix
 # Optics (propagation etc.)
 # =========================
 
-from .optics.propagator import Propagator, IdentityPropagator, MFTPropagator
+from .optics.propagator import (
+    Propagator,
+    PropagationRegime,
+    PropagationSamplingError,
+    IdentityPropagator,
+    MFTPropagator,
+)
 from .optics.detector import Detector
 from .optics.adc import ADCDispersionModel
 from .optics.atmosphere import AtmosphereModel, KolmogorovAtmosphereModel, NCPAModel
@@ -95,6 +101,8 @@ __all__ = [
     "InteractionMatrix",
     # Optics
     "Propagator",
+    "PropagationRegime",
+    "PropagationSamplingError",
     "IdentityPropagator",
     "MFTPropagator",
     "Detector",
