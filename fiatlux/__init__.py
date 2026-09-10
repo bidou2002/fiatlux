@@ -57,7 +57,10 @@ from .optics.elements.deformable_mirror import (
     ZernikeBasis,
 )
 from .optics.elements.field_stop import ShanonFieldStop
-from .optics.elements.segmented_aperture import HexagonalSegmentedAperture
+from .optics.elements.segmented_aperture import (
+    ELTHarmoniPupil,
+    HexagonalSegmentedAperture,
+)
 from .optics.elements.mask import (
     Mask,
     CircularAperture,
@@ -124,6 +127,7 @@ __all__ = [
     "ZernikeBasis",
     "ShanonFieldStop",
     "HexagonalSegmentedAperture",
+    "ELTHarmoniPupil",
     "Mask",
     "CircularAperture",
     "ArbitraryAperture",
