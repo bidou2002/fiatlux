@@ -359,6 +359,8 @@ The separation between **physical fields**, **optical components**, and **system
 
 The exact axis, shape, unit, device, dtype, element, and propagation invariants
 are specified in the [core API contracts](docs/core_contracts.md).
+The conventions and planned public API for finite-distance propagation are
+specified in the [near-field propagation contract](docs/near_field_propagation.md).
 
 ## Testing
 
