@@ -36,14 +36,51 @@ model = FatmossAtmosphereModel.create(
 )
 ```
 
-Layers are added through `model.backend` using FATMOSS' current `Layer` API.
-The dedicated frozen-flow and multilayer issues will wrap that construction in
-Fiatlux-owned physical layer configurations.
+## Frozen-flow sequences
+
+Use a Fiatlux-owned physical configuration instead of constructing FATMOSS
+layers directly:
+
+```python
+from fiatlux import FatmossAtmosphereModel, FrozenFlowLayer
+
+model = FatmossAtmosphereModel.create_frozen_flow(
+    grid,
+    [FrozenFlowLayer(
+        r0=0.15,
+        outer_scale=25.0,
+        wind_speed=10.0,
+        wind_direction=45.0,
+    )],
+    time_step=1e-3,
+    seed=42,
+)
+
+opd_now = model.current_opd()       # metres; does not advance time
+phase_now = model.current_phase()   # radians at reference_wavelength
+model.advance()
+opd_at_10_ms = model.opd_at(0.010)  # state is unchanged by the query
+cube = model.sequence_opd(100)      # (time, ny, nx), then advances 100 steps
+```
+
+`wind_speed` is in m/s and `wind_direction` is in degrees, following FATMOSS.
+The physical displacement per cadence is passed to FATMOSS without rounding,
+so fractional-pixel frozen-flow translations are preserved. A time supplied to
+`opd_at()`, `phase_at()` or `seek_time()` must lie exactly on the configured
+cadence.
+
+Optical evaluation and time advancement are deliberately separate for models
+created by `create_frozen_flow()`: repeated calls to `sample_opd()` return the
+same instant until `advance()` or `seek_time()` is called. This makes it possible
+to propagate multiple wavelengths or optical branches through one atmosphere
+state without accidentally moving the turbulence between evaluations.
 
 ## Conventions
 
 - `Grid.dx`, `Grid.dy` and generator diameter `D`: metres.
 - `time_step`: seconds.
+- `FrozenFlowLayer.r0`, `outer_scale`, `altitude`: metres.
+- `FrozenFlowLayer.wind_speed`: m/s; `wind_direction`: degrees.
 - `reference_wavelength`: metres in Fiatlux; FATMOSS currently uses 500 nm.
 - upstream screens: nanometres of OPD in `(x, y)` order.
 - `sample_opd()` output: metres of OPD in Fiatlux `(ny, nx)` order.
