@@ -421,6 +421,7 @@ class ShackHartmannLensletArray:
         valid_subapertures: torch.Tensor | None = None,
         pupil_transmission: torch.Tensor | None = None,
         minimum_illumination: float = 0.0,
+        spot_oversampling: int = 1,
     ) -> None:
         if not isinstance(grid, Grid):
             raise TypeError("grid must be a fiatlux Grid.")
@@ -429,6 +430,15 @@ class ShackHartmannLensletArray:
         self.focal_length = _positive_finite(focal_length, "focal_length")
         self.samples_x = self._integer_samples(self.pitch, grid.dx, "pitch / dx")
         self.samples_y = self._integer_samples(self.pitch, grid.dy, "pitch / dy")
+        if (
+            not isinstance(spot_oversampling, int)
+            or isinstance(spot_oversampling, bool)
+            or spot_oversampling < 1
+        ):
+            raise ValueError("spot_oversampling must be a positive integer.")
+        self.spot_oversampling = spot_oversampling
+        self.spot_samples_x = self.samples_x * spot_oversampling
+        self.spot_samples_y = self.samples_y * spot_oversampling
         maximum_x = grid.nx // self.samples_x
         maximum_y = grid.ny // self.samples_y
         self.n_lenslets_x = self._lenslet_count(n_lenslets_x, maximum_x, "x")
@@ -562,6 +572,17 @@ class ShackHartmannLensletArray:
             self.n_lenslets_x,
             self.samples_x,
         ).permute(0, 1, 3, 2, 4)
+        padding_x = self.spot_samples_x - self.samples_x
+        padding_y = self.spot_samples_y - self.samples_y
+        subapertures = functional.pad(
+            subapertures,
+            (
+                padding_x // 2,
+                padding_x - padding_x // 2,
+                padding_y // 2,
+                padding_y - padding_y // 2,
+            ),
+        )
         spectrum = torch.fft.fftshift(
             torch.fft.fft2(
                 torch.fft.ifftshift(subapertures, dim=(-2, -1)),
@@ -580,10 +601,10 @@ class ShackHartmannLensletArray:
             None, :, :, None, None
         ]
         pixel_scale_x = wavelengths * self.focal_length / (
-            self.samples_x * self.grid.dx
+            self.spot_samples_x * self.grid.dx
         )
         pixel_scale_y = wavelengths * self.focal_length / (
-            self.samples_y * self.grid.dy
+            self.spot_samples_y * self.grid.dy
         )
         return ShackHartmannImage(
             complex_amplitude=amplitude,

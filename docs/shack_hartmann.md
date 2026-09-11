@@ -33,6 +33,12 @@ These ratios must be integers. A Boolean `valid_subapertures` array can disable
 known invalid lenslets; automatic partial-illumination decisions belong to the
 dedicated illumination/noise layer.
 
+For calibrated subpixel centroiding, `spot_oversampling` zero-pads each
+subaperture before its focal FFT. For example, a 4×4 subaperture with
+`spot_oversampling=4` produces a 16×16 spot with four times finer physical
+sampling on each axis. The physical FFT normalization continues to conserve
+photon flux. The default is one for backward-compatible native sampling.
+
 ## Propagation and sampling
 
 For a thin lens of focal length `f`, its quadratic phase followed by Fresnel
@@ -140,3 +146,11 @@ to the full-well capacity. A subaperture is invalid if it is optically masked,
 below `minimum_electrons`, or contains a saturated pixel. The frame reports
 both `valid_subapertures` and `saturated_subapertures` explicitly. Random state
 is private to the detector and reproducible from `random_seed`.
+
+## End-to-end calibration
+
+The maintained `tutorials/11_shack_hartmann_end_to_end.ipynb` notebook uses the
+generic `InteractionMatrix` with `measurement.slope_vector`. It calibrates tip,
+tilt and defocus by push–pull, filters the SVD pseudo-inverse, reconstructs
+known modal coefficients and demonstrates closed-loop convergence. The
+notebook executes from a clean kernel in CI.
