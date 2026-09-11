@@ -46,6 +46,27 @@ def test_flat_wavefront_forms_regular_spots_and_conserves_flux():
     assert int((mosaic > 0).sum()) == 16
 
 
+def test_oversampled_spots_refine_sampling_and_conserve_flux():
+    grid = Grid(8, 8, 0.1, 0.1, dtype=torch.float64)
+    field = monochromatic_field(grid)
+    sensor = ShackHartmannLensletArray(
+        grid, pitch=0.4, focal_length=2.0, spot_oversampling=4
+    )
+
+    spots = sensor.propagate(field)
+    assert spots.complex_amplitude.shape == (1, 2, 2, 16, 16)
+    assert float(spots.pixel_scale_x[0]) == pytest.approx(
+        field.spectrum.wavelengths[0] * 2.0 / (16 * grid.dx)
+    )
+    input_flux = field.intensity().sum() * grid.dx * grid.dy
+    torch.testing.assert_close(spots.pixel_flux.sum(), input_flux)
+
+    with pytest.raises(ValueError, match="spot_oversampling"):
+        ShackHartmannLensletArray(
+            grid, pitch=0.4, focal_length=2.0, spot_oversampling=0
+        )
+
+
 def test_known_wavefront_tilt_moves_every_spot_with_correct_sign_and_scale():
     wavelength = 500e-9
     grid = Grid(16, 16, 0.1, 0.1, dtype=torch.float64)

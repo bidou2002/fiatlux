@@ -7,11 +7,15 @@ the dependency set declared by the `tutorials` extra:
 python -m pip install -e '.[tutorials]'
 ```
 
-Notebooks 00–05 and 07–09 are self-contained and must execute independently from
+Notebooks 00–05, 07–09 and 11 are self-contained and must execute independently from
 a clean kernel. Notebook 07 demonstrates a complete ZELDA closed loop, from
 interaction-matrix calibration to the converged residual OPD. Continuous
 integration executes each notebook in a separate kernel, so variables and
 outputs from another tutorial cannot mask a missing definition.
+
+Notebook 11 validates the Shack–Hartmann chain from lenslet propagation and
+subpixel centroiding through push–pull calibration, SVD reconstruction and
+closed-loop correction of tip, tilt and defocus.
 
 Notebook 06 requires a directory of HARMONI residual FITS files. Set its path
 before launching Jupyter:
