@@ -49,6 +49,8 @@ from .optics.turbulence_validation import (
     temporal_autocorrelation,
 )
 from .optics.shack_hartmann import (
+    ShackHartmannDetector,
+    ShackHartmannDetectorFrame,
     ShackHartmannImage,
     ShackHartmannLensletArray,
     ShackHartmannMeasurement,
@@ -147,6 +149,8 @@ __all__ = [
     "ShackHartmannLensletArray",
     "ShackHartmannMeasurement",
     "ShackHartmannSlopeEstimator",
+    "ShackHartmannDetector",
+    "ShackHartmannDetectorFrame",
     # Elements
     "OpticalElement",
     "DeformableMirror",

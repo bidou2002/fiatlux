@@ -6,10 +6,12 @@ import math
 from dataclasses import dataclass
 
 import torch
+import torch.nn.functional as functional
 
 from fiatlux.core.field import Field
 from fiatlux.core.grid import Grid
 from fiatlux.optics.elements.base import validate_field_grid
+from fiatlux.utils.random import RandomGeneratorMixin
 
 
 def _positive_finite(value: float, name: str) -> float:
@@ -36,6 +38,7 @@ class ShackHartmannImage:
     pixel_scale_x: torch.Tensor
     pixel_scale_y: torch.Tensor
     valid_subapertures: torch.Tensor
+    illumination_fractions: torch.Tensor | None = None
 
     @property
     def intensity(self) -> torch.Tensor:
@@ -60,6 +63,176 @@ class ShackHartmannImage:
 
 
 @dataclass(frozen=True)
+class ShackHartmannDetectorFrame:
+    """Common-grid detector exposure in electrons per pixel."""
+
+    electrons: torch.Tensor
+    expected_electrons: torch.Tensor
+    pixel_scale_x: torch.Tensor
+    pixel_scale_y: torch.Tensor
+    valid_subapertures: torch.Tensor
+    saturated_subapertures: torch.Tensor
+    illumination_fractions: torch.Tensor
+
+
+class ShackHartmannDetector(RandomGeneratorMixin):
+    """Expose lenslet spots on a common physical detector grid.
+
+    Spectral intensity densities are bilinearly sampled at the configured
+    detector-pixel centres before wavelength channels are summed. Noise is
+    therefore applied once to the physically integrated broadband exposure.
+    """
+
+    def __init__(
+        self,
+        *,
+        exposure_time: float,
+        pixel_scale_x: float,
+        pixel_scale_y: float | None = None,
+        quantum_efficiency: float = 1.0,
+        photon_noise: bool = True,
+        dark_current: float = 0.0,
+        read_noise: float = 0.0,
+        full_well: float | None = None,
+        minimum_electrons: float = 0.0,
+        random_seed: int | None = None,
+        generator: torch.Generator | None = None,
+        device: torch.device | str = "cpu",
+    ) -> None:
+        self.exposure_time = _positive_finite(exposure_time, "exposure_time")
+        self.pixel_scale_x = _positive_finite(pixel_scale_x, "pixel_scale_x")
+        self.pixel_scale_y = _positive_finite(
+            pixel_scale_x if pixel_scale_y is None else pixel_scale_y,
+            "pixel_scale_y",
+        )
+        if not isinstance(quantum_efficiency, (int, float)) or isinstance(
+            quantum_efficiency, bool
+        ) or not 0 <= quantum_efficiency <= 1:
+            raise ValueError("quantum_efficiency must be in [0, 1].")
+        self.quantum_efficiency = float(quantum_efficiency)
+        self.photon_noise = bool(photon_noise)
+        self.dark_current = self._non_negative(dark_current, "dark_current")
+        self.read_noise = self._non_negative(read_noise, "read_noise")
+        self.minimum_electrons = self._non_negative(
+            minimum_electrons, "minimum_electrons"
+        )
+        self.full_well = (
+            None if full_well is None else _positive_finite(full_well, "full_well")
+        )
+        self._configure_generator(device, seed=random_seed, generator=generator)
+
+    @staticmethod
+    def _non_negative(value: float, name: str) -> float:
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise TypeError(f"{name} must be a real number.")
+        value = float(value)
+        if not math.isfinite(value) or value < 0:
+            raise ValueError(f"{name} must be non-negative and finite.")
+        return value
+
+    @staticmethod
+    def _resample_density(
+        density: torch.Tensor,
+        input_scale_x: torch.Tensor,
+        input_scale_y: torch.Tensor,
+        output_scale_x: float,
+        output_scale_y: float,
+    ) -> torch.Tensor:
+        nw, nly, nlx, ny, nx = density.shape
+        dtype = density.dtype
+        device = density.device
+        x = (torch.arange(nx, device=device, dtype=dtype) - nx // 2) * output_scale_x
+        y = (torch.arange(ny, device=device, dtype=dtype) - ny // 2) * output_scale_y
+        gx = (
+            torch.zeros((nw, 1), device=device, dtype=dtype)
+            if nx == 1
+            else 2
+            * (x[None] / input_scale_x[:, None] + nx // 2)
+            / (nx - 1)
+            - 1
+        )
+        gy = (
+            torch.zeros((nw, 1), device=device, dtype=dtype)
+            if ny == 1
+            else 2
+            * (y[None] / input_scale_y[:, None] + ny // 2)
+            / (ny - 1)
+            - 1
+        )
+        grid_x = gx[:, None, :].expand(nw, ny, nx)
+        grid_y = gy[:, :, None].expand(nw, ny, nx)
+        grid = torch.stack((grid_x, grid_y), dim=-1)
+        batch = density.reshape(nw, nly * nlx, ny, nx)
+        sampled = functional.grid_sample(
+            batch,
+            grid,
+            mode="bilinear",
+            padding_mode="zeros",
+            align_corners=True,
+        )
+        return sampled.reshape(nw, nly, nlx, ny, nx)
+
+    def expose(self, image: ShackHartmannImage) -> ShackHartmannDetectorFrame:
+        """Generate one broadband noisy exposure from ideal spectral spots."""
+        if not isinstance(image, ShackHartmannImage):
+            raise TypeError("image must be a ShackHartmannImage.")
+        if image.complex_amplitude.device != self.generator.device:
+            raise ValueError("image and detector random generator must share a device.")
+        density = self._resample_density(
+            image.intensity,
+            image.pixel_scale_x,
+            image.pixel_scale_y,
+            self.pixel_scale_x,
+            self.pixel_scale_y,
+        )
+        photon_rate = density.sum(dim=0) * self.pixel_scale_x * self.pixel_scale_y
+        expected_signal = photon_rate * self.exposure_time * self.quantum_efficiency
+        expected_dark = torch.full_like(
+            expected_signal, self.dark_current * self.exposure_time
+        )
+        electrons = (
+            torch.poisson(expected_signal, generator=self.generator)
+            if self.photon_noise
+            else expected_signal.clone()
+        )
+        if self.dark_current:
+            electrons = electrons + torch.poisson(
+                expected_dark, generator=self.generator
+            )
+        expected = expected_signal + expected_dark
+        if self.read_noise:
+            electrons = electrons + torch.normal(
+                mean=torch.zeros_like(electrons),
+                std=self.read_noise,
+                generator=self.generator,
+            )
+        electrons = electrons.clamp_min(0)
+        saturated_pixels = torch.zeros_like(electrons, dtype=torch.bool)
+        if self.full_well is not None:
+            saturated_pixels = electrons >= self.full_well
+            electrons = electrons.clamp(max=self.full_well)
+        saturated = saturated_pixels.any(dim=(-2, -1))
+        enough_signal = expected.sum(dim=(-2, -1)) >= self.minimum_electrons
+        valid = image.valid_subapertures & enough_signal & ~saturated
+        fractions = image.illumination_fractions
+        if fractions is None:
+            fractions = torch.ones_like(valid, dtype=electrons.dtype)
+        return ShackHartmannDetectorFrame(
+            electrons=electrons,
+            expected_electrons=expected,
+            pixel_scale_x=torch.as_tensor(
+                self.pixel_scale_x, dtype=electrons.dtype, device=electrons.device
+            ),
+            pixel_scale_y=torch.as_tensor(
+                self.pixel_scale_y, dtype=electrons.dtype, device=electrons.device
+            ),
+            valid_subapertures=valid,
+            saturated_subapertures=saturated,
+            illumination_fractions=fractions,
+        )
+
+
+@dataclass(frozen=True)
 class ShackHartmannMeasurement:
     """Calibrated Shack-Hartmann centroids and wavefront slopes.
 
@@ -73,6 +246,8 @@ class ShackHartmannMeasurement:
     reference_centroids: torch.Tensor
     slopes: torch.Tensor
     valid_subapertures: torch.Tensor
+    saturated_subapertures: torch.Tensor
+    weights: torch.Tensor
 
     @property
     def slope_vector(self) -> torch.Tensor:
@@ -137,14 +312,25 @@ class ShackHartmannSlopeEstimator:
 
     def measure(
         self,
-        image: ShackHartmannImage,
+        image: ShackHartmannImage | ShackHartmannDetectorFrame,
         *,
         reference_centroids: torch.Tensor | None = None,
     ) -> ShackHartmannMeasurement:
         """Measure centroids and reference-subtracted wavefront slopes."""
-        if not isinstance(image, ShackHartmannImage):
-            raise TypeError("image must be a ShackHartmannImage.")
-        flux = image.pixel_flux
+        if isinstance(image, ShackHartmannImage):
+            flux = image.pixel_flux
+            scales_x = image.pixel_scale_x
+            scales_y = image.pixel_scale_y
+            saturated = torch.zeros_like(image.valid_subapertures)
+            fractions = image.illumination_fractions
+        elif isinstance(image, ShackHartmannDetectorFrame):
+            flux = image.electrons[None]
+            scales_x = image.pixel_scale_x.reshape(1)
+            scales_y = image.pixel_scale_y.reshape(1)
+            saturated = image.saturated_subapertures
+            fractions = image.illumination_fractions
+        else:
+            raise TypeError("image must be a ShackHartmannImage or detector frame.")
         _, nly, nlx, spot_ny, spot_nx = flux.shape
         work = flux
 
@@ -164,11 +350,11 @@ class ShackHartmannSlopeEstimator:
         x = (
             torch.arange(spot_nx, device=flux.device, dtype=flux.dtype)
             - spot_nx // 2
-        ) * image.pixel_scale_x[:, None]
+        ) * scales_x[:, None]
         y = (
             torch.arange(spot_ny, device=flux.device, dtype=flux.dtype)
             - spot_ny // 2
-        ) * image.pixel_scale_y[:, None]
+        ) * scales_y[:, None]
         total_flux = work.sum(dim=(0, -2, -1))
         numerator_x = (work * x[:, None, None, None, :]).sum(dim=(0, -2, -1))
         numerator_y = (work * y[:, None, None, :, None]).sum(dim=(0, -2, -1))
@@ -203,6 +389,12 @@ class ShackHartmannSlopeEstimator:
             reference_centroids=reference,
             slopes=slopes,
             valid_subapertures=valid,
+            saturated_subapertures=saturated,
+            weights=(
+                torch.ones_like(valid, dtype=flux.dtype)
+                if fractions is None
+                else fractions.to(device=flux.device, dtype=flux.dtype)
+            ),
         )
 
 
@@ -227,6 +419,8 @@ class ShackHartmannLensletArray:
         registration_x: float = 0.0,
         registration_y: float = 0.0,
         valid_subapertures: torch.Tensor | None = None,
+        pupil_transmission: torch.Tensor | None = None,
+        minimum_illumination: float = 0.0,
     ) -> None:
         if not isinstance(grid, Grid):
             raise TypeError("grid must be a fiatlux Grid.")
@@ -251,6 +445,16 @@ class ShackHartmannLensletArray:
             raise ValueError("registered lenslet array exceeds the grid along y.")
 
         expected = (self.n_lenslets_y, self.n_lenslets_x)
+        if not isinstance(minimum_illumination, (int, float)) or isinstance(
+            minimum_illumination, bool
+        ) or not 0 <= minimum_illumination <= 1:
+            raise ValueError("minimum_illumination must be in [0, 1].")
+        self.minimum_illumination = float(minimum_illumination)
+        self.illumination_fractions = (
+            None
+            if pupil_transmission is None
+            else self.compute_illumination_fractions(pupil_transmission)
+        )
         if valid_subapertures is None:
             valid_subapertures = torch.ones(expected, dtype=torch.bool, device=grid.device)
         elif not isinstance(valid_subapertures, torch.Tensor):
@@ -263,6 +467,33 @@ class ShackHartmannLensletArray:
         self.valid_subapertures = valid_subapertures.to(
             device=grid.device, dtype=torch.bool
         )
+        if self.illumination_fractions is not None:
+            self.valid_subapertures &= (
+                self.illumination_fractions >= self.minimum_illumination
+            )
+
+    def compute_illumination_fractions(
+        self, pupil_transmission: torch.Tensor
+    ) -> torch.Tensor:
+        """Return mean transmitted power in each registered subaperture."""
+        if not isinstance(pupil_transmission, torch.Tensor):
+            raise TypeError("pupil_transmission must be a torch.Tensor.")
+        if tuple(pupil_transmission.shape) != (self.grid.ny, self.grid.nx):
+            raise ValueError(
+                "pupil_transmission must have shape "
+                f"{(self.grid.ny, self.grid.nx)}."
+            )
+        transmission = pupil_transmission.to(device=self.grid.device)
+        power = transmission.abs().square().to(dtype=self.grid.dtype)
+        stop_x = self.start_x + self.n_lenslets_x * self.samples_x
+        stop_y = self.start_y + self.n_lenslets_y * self.samples_y
+        cropped = power[self.start_y:stop_y, self.start_x:stop_x]
+        return cropped.reshape(
+            self.n_lenslets_y,
+            self.samples_y,
+            self.n_lenslets_x,
+            self.samples_x,
+        ).permute(0, 2, 1, 3).mean(dim=(-2, -1))
 
     @staticmethod
     def _integer_samples(length: float, spacing: float, name: str) -> int:
@@ -360,4 +591,5 @@ class ShackHartmannLensletArray:
             pixel_scale_x=pixel_scale_x,
             pixel_scale_y=pixel_scale_y,
             valid_subapertures=self.valid_subapertures,
+            illumination_fractions=self.illumination_fractions,
         )
