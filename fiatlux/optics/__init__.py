@@ -16,6 +16,8 @@ from .turbulence_validation import (
     temporal_autocorrelation,
 )
 from .shack_hartmann import (
+    ShackHartmannDetector,
+    ShackHartmannDetectorFrame,
     ShackHartmannImage,
     ShackHartmannLensletArray,
     ShackHartmannMeasurement,
@@ -51,4 +53,6 @@ __all__ = [
     "ShackHartmannLensletArray",
     "ShackHartmannMeasurement",
     "ShackHartmannSlopeEstimator",
+    "ShackHartmannDetector",
+    "ShackHartmannDetectorFrame",
 ]

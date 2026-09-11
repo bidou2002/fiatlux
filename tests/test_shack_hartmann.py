@@ -7,6 +7,7 @@ from fiatlux import (
     Field,
     Grid,
     PlaneWave,
+    ShackHartmannDetector,
     ShackHartmannImage,
     ShackHartmannLensletArray,
     ShackHartmannSlopeEstimator,
@@ -218,6 +219,119 @@ def test_centroid_window_threshold_and_validation():
         ShackHartmannSlopeEstimator(focal_length=1.0).measure(
             image, reference_centroids=torch.zeros(2, 2)
         )
+
+
+def test_partial_subaperture_illumination_is_measured_masked_and_weighted():
+    grid = Grid(8, 8, 0.1, 0.1, dtype=torch.float64)
+    pupil = torch.ones((8, 8), dtype=grid.dtype)
+    pupil[:2, :4] = 0
+    pupil[:3, 4:] = 0
+    sensor = ShackHartmannLensletArray(
+        grid,
+        pitch=0.4,
+        focal_length=1.0,
+        pupil_transmission=pupil,
+        minimum_illumination=0.4,
+    )
+
+    expected = torch.tensor([[0.5, 0.25], [1.0, 1.0]], dtype=grid.dtype)
+    torch.testing.assert_close(sensor.illumination_fractions, expected)
+    assert torch.equal(
+        sensor.valid_subapertures,
+        torch.tensor([[True, False], [True, True]]),
+    )
+    measurement = ShackHartmannSlopeEstimator(focal_length=1.0).measure(
+        sensor.propagate(monochromatic_field(grid))
+    )
+    torch.testing.assert_close(measurement.weights, expected)
+    assert measurement.slope_vector.shape == (6,)
+
+    obscured_grid = Grid(12, 12, 0.1, 0.1, dtype=torch.float64)
+    central_obscuration = torch.ones((12, 12), dtype=obscured_grid.dtype)
+    central_obscuration[4:8, 4:8] = 0
+    obscured = ShackHartmannLensletArray(
+        obscured_grid,
+        pitch=0.4,
+        focal_length=1.0,
+        pupil_transmission=central_obscuration,
+        minimum_illumination=0.5,
+    )
+    assert obscured.illumination_fractions[1, 1] == 0
+    assert not obscured.valid_subapertures[1, 1]
+
+    with pytest.raises(ValueError, match="minimum_illumination"):
+        ShackHartmannLensletArray(
+            grid, pitch=0.4, focal_length=1.0, minimum_illumination=1.1
+        )
+
+
+def test_detector_integrates_signal_dark_current_and_quantum_efficiency():
+    grid = Grid(8, 8, 0.1, 0.1, dtype=torch.float64)
+    sensor = ShackHartmannLensletArray(grid, pitch=0.4, focal_length=1.0)
+    image = sensor.propagate(monochromatic_field(grid))
+    detector = ShackHartmannDetector(
+        exposure_time=2.0,
+        pixel_scale_x=float(image.pixel_scale_x[0]),
+        quantum_efficiency=0.5,
+        photon_noise=False,
+        dark_current=3.0,
+        random_seed=5,
+        device=grid.device,
+    )
+    frame = detector.expose(image)
+    torch.testing.assert_close(
+        frame.expected_electrons,
+        image.pixel_flux.sum(dim=0) + 6.0,
+    )
+
+
+def test_detector_noise_is_reproducible_and_low_flux_is_invalid():
+    grid = Grid(8, 8, 0.1, 0.1, dtype=torch.float64)
+    sensor = ShackHartmannLensletArray(grid, pitch=0.4, focal_length=1.0)
+    image = sensor.propagate(monochromatic_field(grid))
+    kwargs = dict(
+        exposure_time=1.0,
+        pixel_scale_x=float(image.pixel_scale_x[0]),
+        photon_noise=True,
+        dark_current=0.2,
+        read_noise=1.0,
+        minimum_electrons=1e30,
+        random_seed=12,
+        device=grid.device,
+    )
+    first = ShackHartmannDetector(**kwargs).expose(image)
+    second = ShackHartmannDetector(**kwargs).expose(image)
+    torch.testing.assert_close(first.electrons, second.electrons)
+    assert not first.valid_subapertures.any()
+
+    valid_frame = ShackHartmannDetector(
+        **{**kwargs, "minimum_electrons": 0.0}
+    ).expose(image)
+    noisy_measurement = ShackHartmannSlopeEstimator(focal_length=1.0).measure(
+        valid_frame
+    )
+    assert noisy_measurement.valid_subapertures.all()
+    assert torch.isfinite(noisy_measurement.slopes).all()
+
+
+def test_saturation_is_clipped_reported_and_rejected_by_centroiding():
+    grid = Grid(8, 8, 0.1, 0.1, dtype=torch.float64)
+    sensor = ShackHartmannLensletArray(grid, pitch=0.4, focal_length=1.0)
+    image = sensor.propagate(monochromatic_field(grid))
+    frame = ShackHartmannDetector(
+        exposure_time=1.0,
+        pixel_scale_x=float(image.pixel_scale_x[0]),
+        photon_noise=False,
+        full_well=1e-12,
+        device=grid.device,
+    ).expose(image)
+
+    assert frame.saturated_subapertures.all()
+    assert torch.all(frame.electrons <= 1e-12)
+    measurement = ShackHartmannSlopeEstimator(focal_length=1.0).measure(frame)
+    assert not measurement.valid_subapertures.any()
+    assert measurement.saturated_subapertures.all()
+    assert measurement.slope_vector.numel() == 0
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")

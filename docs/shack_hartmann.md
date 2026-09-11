@@ -90,3 +90,53 @@ same ordering and are small angles in radians. `measurement.slope_vector`
 contains only valid subapertures, ordered as all x slopes in row-major lenslet
 order followed by all y slopes in the same order. Empty or explicitly disabled
 subapertures return zero and are false in `valid_subapertures`.
+
+## Partial illumination and detector noise
+
+Pass the pupil's amplitude transmission to the lenslet array to compute the
+mean transmitted-power fraction of every registered subaperture. A minimum
+fraction masks edge, obscured or inter-segment subapertures before propagation:
+
+```python
+lenslets = ShackHartmannLensletArray(
+    grid,
+    pitch=0.20,
+    focal_length=5e-3,
+    pupil_transmission=pupil_mask,
+    minimum_illumination=0.5,
+)
+```
+
+The fractions are carried by `ShackHartmannImage` and returned as
+`measurement.weights`. Invalid subapertures are omitted from `slope_vector`;
+the full slope map remains available with zero values at invalid positions.
+
+`ShackHartmannDetector` converts ideal spectral photon-rate densities into a
+single physical detector exposure:
+
+```python
+from fiatlux import ShackHartmannDetector
+
+detector = ShackHartmannDetector(
+    exposure_time=1e-3,          # s
+    pixel_scale_x=15e-6,         # m / pixel
+    quantum_efficiency=0.9,
+    photon_noise=True,
+    dark_current=0.01,           # electrons / pixel / s
+    read_noise=1.0,              # electrons RMS / pixel / exposure
+    full_well=80_000,            # electrons / pixel
+    minimum_electrons=100,       # electrons / subaperture
+    random_seed=1,
+    device=grid.device,
+)
+frame = detector.expose(spots)
+measurement = estimator.measure(frame)
+```
+
+Before spectral integration, each wavelength is bilinearly sampled on the
+common detector grid because its natural focal-plane scale differs. Photon and
+dark counts use Poisson statistics; read noise is Gaussian. Pixels are clipped
+to the full-well capacity. A subaperture is invalid if it is optically masked,
+below `minimum_electrons`, or contains a saturated pixel. The frame reports
+both `valid_subapertures` and `saturated_subapertures` explicitly. Random state
+is private to the detector and reproducible from `random_seed`.
