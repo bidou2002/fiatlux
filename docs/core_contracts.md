@@ -36,21 +36,27 @@ channel; their sum is the source's total sampled photon rate.
 
 ## Field
 
-A `Field` combines complex amplitude, a grid, and a spectrum.
+A `Field` combines complex amplitude, a grid, a spectrum, and named leading
+dimensions. Sources still produce three-dimensional fields when no latent
+dimensions are present.
 
 | Property | Contract |
 |---|---|
-| Shape | `(n_wavelengths, ny, nx)` |
+| Shape | `(*latent, n_wavelengths, ny, nx)` |
+| Axes | Wavelength at `-3`; spatial axes `(-2, -1)` |
+| Latent metadata | One `FieldDimension` per leading axis, in tensor order |
 | Channel order | Identical to `spectrum.wavelengths` |
 | Spatial amplitude units | `sqrt(photons / s / m²)` |
 | `intensity()` units | `photons / s / m²` per wavelength channel |
-| Integrated channel flux | `intensity()[k].sum() * dx * dy` |
+| Integrated channel flux per latent sample | `intensity()[..., k, :, :].sum((-2, -1)) * dx * dy` |
 | Device | Shared by amplitude, grid, wavelengths, and fluxes |
 | Standard single-precision source | float32 metadata and complex64 amplitude |
 | Standard double-precision source | float64 metadata and complex128 amplitude |
 
 `field.to()` transfers the amplitude and all associated state coherently and
-returns a new `Field`.
+returns a new `Field`, including transferred dimension coordinates and weights.
+See [named latent dimensions](latent_dimensions.md) for selection, OPD alignment,
+coherent amplitude reductions and weighted incoherent exposures.
 
 ## OpticalElement
 
@@ -58,7 +64,7 @@ An `OpticalElement` is a same-plane transformation. By default it:
 
 - accepts one `Field` and returns a new `Field`;
 - preserves the grid and spectrum;
-- preserves `(n_wavelengths, ny, nx)` shape;
+- preserves `(*latent, n_wavelengths, ny, nx)` shape and latent metadata;
 - preserves device, precision, wavelength order, and field units;
 - may modify amplitude and phase;
 - rejects a field whose grid is incompatible with the element grid.
@@ -70,7 +76,7 @@ of spatial sampling belongs to a propagator rather than a mask.
 
 A `Propagator` maps a field between optical planes. It:
 
-- preserves the spectrum and leading wavelength dimension;
+- preserves the spectrum, wavelength axis at `-3`, and all leading latent metadata;
 - propagates every wavelength independently in the existing order;
 - preserves device and the float/complex precision pairing;
 - may replace the spatial grid and `(ny, nx)` shape;
@@ -78,7 +84,7 @@ A `Propagator` maps a field between optical planes. It:
 
 For `MFTPropagator`, the input grid is `field.grid` and the output sampling is
 `output_grid`. Its result shape is
-`(n_wavelengths, output_grid.ny, output_grid.nx)`. Both grids must use the same
+`(*latent, n_wavelengths, output_grid.ny, output_grid.nx)`. Both grids must use the same
 device and dtype. The implemented physical normalization preserves integrated
 flux on conjugate lossless grids, as verified by the analytical tests.
 
@@ -90,6 +96,11 @@ The detector grid must match the final field grid. A detector integrates the
 spectral photon-rate density over wavelength channels, pixel area `dx * dy`,
 and exposure time. Before optional digitization, its output is an electron
 count per pixel.
+
+With `integrate_over='time'`, explicit weights in seconds sum spectral
+**intensities**, not complex amplitudes. Their sum must equal `exposure_time`;
+that duration is not multiplied again. Unreduced latent axes remain labelled
+in a `DetectorImage`; a fully reduced image is the legacy two-dimensional tensor.
 
 ## Runtime validation
 
