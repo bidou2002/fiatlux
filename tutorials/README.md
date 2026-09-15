@@ -19,3 +19,6 @@ These notebooks are written against the current `fiatlux2.0` API and may expose
 the core issues identified during code review, particularly monochromatic
 spectrum handling, dimensional conventions, detector normalization, and DM API
 consistency.
+
+13. `12_named_latent_dimensions.ipynb` — Frozen-cube loop/batch equivalence,
+    incoherent exposures, chunking and an injected temporal FATMOSS backend.
