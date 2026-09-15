@@ -87,6 +87,7 @@ class Mask(OpticalElement, ABC):
             field.complex_amplitude * self.complex_transmission,
             field.grid,
             field.spectrum,
+            field.dimensions,
         )
 
     def __repr__(self):
@@ -301,6 +302,49 @@ class Atmosphere(RandomGeneratorMixin, Mask):
                 generator=generator,
             )
         super().__init__(grid=grid, recompute=recompute)
+
+    def apply_buffer(self, field: Field, number: int, dimension="time",
+                     sample_period=None, advance=True) -> Field:
+        """Apply one OPD cube with explicit cadence; propagation does not advance it.
+
+        Independent models have no physical clock. ``advance=False`` restores
+        their generator state. FATMOSS delegates state ownership to sequence_opd.
+        """
+        import math
+        from fiatlux.core.dimensions import FieldDimension
+        from fiatlux.optics.fatmoss import FatmossAtmosphereModel
+
+        validate_field_grid(field, self.grid, "Atmosphere")
+        if not isinstance(number, int) or isinstance(number, bool) or number < 1:
+            raise ValueError("number must be a positive integer.")
+        if dimension in {d.name for d in field.dimensions}:
+            raise ValueError("apply_buffer must introduce a new dimension.")
+        model = self.atmosphere_model
+        temporal = isinstance(model, FatmossAtmosphereModel)
+        cadence = model.time_step if temporal else None
+        dt = cadence if sample_period is None else sample_period
+        if dt is None or not math.isfinite(dt) or dt <= 0:
+            raise ValueError("A positive finite sample_period in seconds is required.")
+        if temporal and cadence is not None and not math.isclose(dt, cadence, rel_tol=1e-12):
+            raise ValueError("sample_period must match FATMOSS time_step.")
+        start = model.timestep * dt if temporal else 0.0
+        dtype, device = field.complex_amplitude.real.dtype, field.complex_amplitude.device
+        descriptor = FieldDimension(dimension, number,
+            coordinates=start + torch.arange(number, device=device, dtype=dtype) * dt,
+            unit="s", integration_weights=torch.full((number,), dt, device=device, dtype=dtype))
+        if model.grid != self.grid or model.dtype != dtype:
+            raise ValueError("Atmosphere model grid and dtype must match the field.")
+        if temporal:
+            opd = model.sequence_opd(number, advance=advance, remove_piston=self.remove_piston)
+        else:
+            state = self.generator.get_state() if not advance else None
+            try:
+                opd = model.sample_opd_many(number, generator=self.generator,
+                                            remove_piston=self.remove_piston)
+            finally:
+                if state is not None:
+                    self.generator.set_state(state)
+        return field.apply_opd(opd, dimensions=(descriptor,))
 
     def _build_transmission(self) -> None:
         self.transmission = torch.ones(

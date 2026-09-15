@@ -40,10 +40,18 @@ class SerialSystem:
         Propage le champ à travers tous les éléments dans l'ordre axial.
         Retourne un SimulationResult avec la trace complète.
         """
-        steps: list[SimulationStep] = []
+        field = source.generate_field(self.elements[0].grid)
+        result = self.run_field(field, detector)
+        result.steps[0] = SimulationStep(source, None, field)
+        result._element_to_step[id(source)] = result.steps[0]
+        return result
 
-        current_field = source.generate_field(self.elements[0].grid)
-        steps.append(SimulationStep(source, None, current_field))
+    def run_field(self, field: Field, detector: Detector = None) -> SimulationResult:
+        """Propagate an existing field, preserving arbitrary latent axes."""
+        if not isinstance(field, Field):
+            raise TypeError("run_field expects a Field.")
+        current_field = field
+        steps = [SimulationStep(None, None, field)]
 
         for element in self.elements:
 
@@ -81,6 +89,10 @@ class SimulationResult:
             id(step.element): step for step in steps if step.element is not None
         }
 
+    @property
+    def final_field(self) -> Field:
+        return self.steps[-1].field_after
+
     def field_at(self, element: OpticalElement) -> Field:
         try:
             return self._element_to_step[id(element)].field_after
@@ -97,6 +109,8 @@ class SimulationResult:
         return iter(self.steps)
 
     def plot(self):
+        if any(step.field_after.dimensions for step in self.steps):
+            raise ValueError("Select latent dimensions before plotting a simulation.")
         try:
             import matplotlib.pyplot as plt
         except ImportError as error:

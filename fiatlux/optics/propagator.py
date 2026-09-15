@@ -16,7 +16,7 @@ class Propagator(ABC):
 
     A propagator may replace the spatial grid and spatial shape, but preserves
     wavelength ordering, spectral flux metadata, device, compatible precision,
-    and the leading ``n_wavelengths`` dimension.
+    and all leading latent dimensions. Wavelength is always axis -3.
     """
 
 
@@ -57,12 +57,13 @@ def _validate_scale(value: float | None, name: str, *, allow_zero: bool) -> floa
 class MFTPropagator(Propagator):
     """MFT propagation in the Fraunhofer or Fresnel regime.
 
-    Input amplitudes have shape ``(n_wavelengths, ny_in, nx_in)`` and output
-    amplitudes have shape ``(n_wavelengths, output_grid.ny, output_grid.nx)``.
+    Input amplitudes have shape ``(*latent, n_wavelengths, ny_in, nx_in)`` and output
+    amplitudes have shape ``(*latent, n_wavelengths, output_grid.ny, output_grid.nx)``.
     Input and output grids must share device and real dtype. Wavelength
     channels are propagated independently and retain their original order.
     Fraunhofer is the default and preserves the historical Fiatlux behavior.
     """
+
     focal_length: float | None
     output_grid: Grid
     propagation: PropagationRegime
@@ -134,7 +135,12 @@ class MFTPropagator(Propagator):
 
         if self.propagation is PropagationRegime.FRESNEL and self._scale == 0:
             validate_field_grid(field, self.output_grid, "MFTPropagator")
-            return Field(field.complex_amplitude, self.output_grid, field.spectrum)
+            return Field(
+                field.complex_amplitude,
+                self.output_grid,
+                field.spectrum,
+                field.dimensions,
+            )
 
         x, y = field.grid.x, field.grid.y
         u, v = self.output_grid.x, self.output_grid.y
@@ -175,11 +181,13 @@ class MFTPropagator(Propagator):
                 propagated = carrier / 1j * output_chirp * propagated
             return propagated
 
-        # field.complex_amplitude: (n_wavelengths, ny_in, nx_in)
-        # amplitude: (n_wavelengths, ny_out, nx_out)
-        amplitude = torch.vmap(propagate_one)(field.complex_amplitude, wavelengths)
+        # Map only wavelength. Each matrix pair broadcasts across all latent
+        # samples, so matrices are built once per wavelength, not per sample.
+        amplitude = torch.vmap(propagate_one, in_dims=(-3, 0), out_dims=-3)(
+            field.complex_amplitude, wavelengths
+        )
 
-        return Field(amplitude, self.output_grid, field.spectrum)
+        return Field(amplitude, self.output_grid, field.spectrum, field.dimensions)
 
     @property
     def _symbol(self) -> str:
@@ -210,9 +218,7 @@ class FFTPropagator(Propagator):
             if self.distance is not None:
                 raise ValueError("distance is only valid for Fresnel propagation.")
         else:
-            self.distance = _validate_scale(
-                self.distance, "distance", allow_zero=True
-            )
+            self.distance = _validate_scale(self.distance, "distance", allow_zero=True)
 
     @property
     def _scale(self) -> float:
@@ -228,7 +234,7 @@ class FFTPropagator(Propagator):
             raise TypeError(
                 f"FFTPropagator expects a Field, got {type(field).__name__}."
             )
-        if field.complex_amplitude.shape[0] != 1:
+        if field.complex_amplitude.shape[-3] != 1:
             raise PropagationSamplingError(
                 "FFTPropagator currently requires a monochromatic Field because "
                 "its physical output sampling depends on wavelength; use "
@@ -253,7 +259,7 @@ class FFTPropagator(Propagator):
         if self.propagation is PropagationRegime.FRESNEL and self._scale == 0:
             return field
 
-        amplitude = field.complex_amplitude[0]
+        amplitude = field.complex_amplitude.select(-3, 0)
         wavelength = field.spectrum.wavelengths[0].to(
             dtype=amplitude.real.dtype, device=amplitude.device
         )
@@ -268,19 +274,24 @@ class FFTPropagator(Propagator):
 
         if scale > 0:
             transformed = torch.fft.fftshift(
-                torch.fft.fft2(torch.fft.ifftshift(amplitude), norm="backward")
+                torch.fft.fft2(
+                    torch.fft.ifftshift(amplitude, dim=(-2, -1)),
+                    dim=(-2, -1),
+                    norm="backward",
+                ),
+                dim=(-2, -1),
             )
         else:
             transformed = torch.fft.fftshift(
-                torch.fft.ifft2(torch.fft.ifftshift(amplitude), norm="backward")
+                torch.fft.ifft2(
+                    torch.fft.ifftshift(amplitude, dim=(-2, -1)),
+                    dim=(-2, -1),
+                    norm="backward",
+                ),
+                dim=(-2, -1),
             ) * (field.grid.nx * field.grid.ny)
 
-        propagated = (
-            transformed
-            * field.grid.dx
-            * field.grid.dy
-            / (wavelength * scale)
-        )
+        propagated = transformed * field.grid.dx * field.grid.dy / (wavelength * scale)
 
         if self.propagation is PropagationRegime.FRESNEL:
             x_out, y_out = output_grid.meshgrid()
@@ -291,11 +302,14 @@ class FFTPropagator(Propagator):
             carrier = torch.exp(2j * torch.pi * scale / wavelength)
             propagated = carrier / 1j * output_chirp * propagated
 
-        return Field(propagated.unsqueeze(0), output_grid, field.spectrum)
+        return Field(
+            propagated.unsqueeze(-3), output_grid, field.spectrum, field.dimensions
+        )
 
     @property
     def _symbol(self) -> str:
         return ">"
+
 
 @dataclass
 @register_type("IdentityPropagator")

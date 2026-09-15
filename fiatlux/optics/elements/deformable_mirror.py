@@ -456,6 +456,7 @@ class DeformableMirror(torch.nn.Module):
             field.complex_amplitude * self.complex_transmission,
             field.grid,
             field.spectrum,
+            field.dimensions,
         )
 
     def to_slm(self, slm: "SLM") -> None:
