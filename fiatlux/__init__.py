@@ -39,7 +39,7 @@ from .optics.propagator import (
     IdentityPropagator,
     MFTPropagator,
 )
-from .optics.detector import Detector
+from .optics.detector import Detector, DetectorImage, ExposureAccumulator
 from .optics.adc import ADCDispersionModel
 from .optics.atmosphere import AtmosphereModel, KolmogorovAtmosphereModel, NCPAModel
 from .optics.pupil_validation import PupilComparison, compare_pupil_masks
@@ -133,6 +133,8 @@ __all__ = [
     "IdentityPropagator",
     "MFTPropagator",
     "Detector",
+    "DetectorImage",
+    "ExposureAccumulator",
     "ADCDispersionModel",
     "AtmosphereModel",
     "KolmogorovAtmosphereModel",
