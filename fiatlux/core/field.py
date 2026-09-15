@@ -1,9 +1,10 @@
 # field.py
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from numbers import Number
 import torch
 
+from fiatlux.core.dimensions import FieldDimension, validate_dimensions
 from fiatlux.core.grid import BaseGrid
 from fiatlux.core.spectrum import Spectrum
 
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
 class Field:
     """Polychromatic scalar optical field sampled on a physical grid.
 
-    ``complex_amplitude`` has shape ``(n_wavelengths, ny, nx)``. In a spatial
+    ``complex_amplitude`` has shape ``(*latent, n_wavelengths, ny, nx)``. In a spatial
     plane its units are ``sqrt(photons / s / m²)``, so :meth:`intensity`
     returns a photon-rate density in ``photons / s / m²`` for each wavelength
     channel. Consequently, the photon rate in channel ``k`` is
@@ -33,20 +34,29 @@ class Field:
     complex_amplitude: torch.Tensor
     grid: BaseGrid
     spectrum: Spectrum
+    dimensions: tuple[FieldDimension, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.complex_amplitude, torch.Tensor):
             raise TypeError("complex_amplitude must be a torch.Tensor.")
-        if self.complex_amplitude.ndim != 3:
+        self.dimensions = validate_dimensions(
+            self.dimensions,
+            device=self.complex_amplitude.device,
+            dtype=self.complex_amplitude.real.dtype,
+        )
+        if self.complex_amplitude.ndim != 3 + len(self.dimensions):
             raise ValueError(
-                "complex_amplitude must have shape (n_wavelengths, ny, nx)."
+                "complex_amplitude must have shape (*latent, n_wavelengths, ny, nx)."
             )
         if self.spectrum.wavelengths.ndim != 1 or self.spectrum.fluxes.ndim != 1:
             raise ValueError("Spectrum wavelengths and fluxes must be one-dimensional.")
         if self.spectrum.wavelengths.shape != self.spectrum.fluxes.shape:
-            raise ValueError("Spectrum wavelengths and fluxes must have identical shapes.")
+            raise ValueError(
+                "Spectrum wavelengths and fluxes must have identical shapes."
+            )
 
         expected_shape = (
+            *(d.size for d in self.dimensions),
             len(self.spectrum.wavelengths),
             self.grid.ny,
             self.grid.nx,
@@ -66,6 +76,24 @@ class Field:
         if len(devices) != 1:
             raise ValueError(
                 "Field amplitude, spectrum and grid must be on the same device."
+            )
+
+        if self.dimensions and self.complex_amplitude.dtype not in (
+            torch.complex64,
+            torch.complex128,
+        ):
+            raise ValueError("Field amplitude must be complex64 or complex128.")
+        real_dtype = self.complex_amplitude.real.dtype
+        if any(
+            dtype != real_dtype
+            for dtype in (
+                self.grid.dtype,
+                self.spectrum.wavelengths.dtype,
+                self.spectrum.fluxes.dtype,
+            )
+        ):
+            raise ValueError(
+                "Field grid and spectrum dtype must match amplitude real precision."
             )
 
     def intensity(self) -> torch.Tensor:
@@ -101,13 +129,20 @@ class Field:
             raise ValueError(
                 "Field dtype must be float32, float64, complex64 or complex128."
             )
+        if self.complex_amplitude.is_complex():
+            amplitude_dtype = (
+                torch.complex64 if real_dtype == torch.float32 else torch.complex128
+            )
         return Field(
             self.complex_amplitude.to(device=device, dtype=amplitude_dtype),
             self.grid.to(device=device, dtype=real_dtype),
             self.spectrum.to(device=device, dtype=real_dtype),
+            tuple(d.to(device=device, dtype=real_dtype) for d in self.dimensions),
         )
 
     def _validate_compatible_field(self, other: Field) -> None:
+        if self.dimensions != other.dimensions:
+            raise ValueError("Field dimensions must be identical for arithmetic.")
         if self.grid != other.grid:
             raise ValueError("Field grids must be identical for arithmetic.")
         if self.complex_amplitude.shape != other.complex_amplitude.shape:
@@ -139,7 +174,9 @@ class Field:
         operand = self._operand(other)
         if operand is NotImplemented:
             return NotImplemented
-        return Field(self.complex_amplitude + operand, self.grid, self.spectrum)
+        return Field(
+            self.complex_amplitude + operand, self.grid, self.spectrum, self.dimensions
+        )
 
     def __radd__(self, other: torch.Tensor | Number) -> Field:
         return self + other
@@ -148,22 +185,147 @@ class Field:
         operand = self._operand(other)
         if operand is NotImplemented:
             return NotImplemented
-        return Field(self.complex_amplitude - operand, self.grid, self.spectrum)
+        return Field(
+            self.complex_amplitude - operand, self.grid, self.spectrum, self.dimensions
+        )
 
     def __rsub__(self, other: torch.Tensor | Number) -> Field:
         if not isinstance(other, (torch.Tensor, Number)):
             return NotImplemented
-        return Field(other - self.complex_amplitude, self.grid, self.spectrum)
+        return Field(
+            other - self.complex_amplitude, self.grid, self.spectrum, self.dimensions
+        )
 
     def __mul__(self, other: torch.Tensor | Number) -> Field:
         if not isinstance(other, (torch.Tensor, Number)):
             return NotImplemented
-        return Field(self.complex_amplitude * other, self.grid, self.spectrum)
+        return Field(
+            self.complex_amplitude * other, self.grid, self.spectrum, self.dimensions
+        )
 
     def __rmul__(self, other: torch.Tensor | Number) -> Field:
         return self * other
 
+    def axis(self, name: str) -> int:
+        for axis, dimension in enumerate(self.dimensions):
+            if dimension.name == name:
+                return axis
+        raise ValueError(f"Unknown latent dimension: {name!r}.")
+
+    def dimension(self, name: str) -> FieldDimension:
+        return self.dimensions[self.axis(name)]
+
+    def select(self, name: str, index: int) -> Field:
+        axis = self.axis(name)
+        return Field(
+            self.complex_amplitude.select(axis, index),
+            self.grid,
+            self.spectrum,
+            self.dimensions[:axis] + self.dimensions[axis + 1 :],
+        )
+
+    def slice(self, name: str, start: int | None, stop: int | None) -> Field:
+        axis = self.axis(name)
+        selection = slice(start, stop)
+        indices = [slice(None)] * self.complex_amplitude.ndim
+        indices[axis] = selection
+        dims = list(self.dimensions)
+        dims[axis] = dims[axis].sliced(selection)
+        return Field(
+            self.complex_amplitude[tuple(indices)],
+            self.grid,
+            self.spectrum,
+            tuple(dims),
+        )
+
+    def rename_dimension(self, old: str, new: str) -> Field:
+        dims = list(self.dimensions)
+        axis = self.axis(old)
+        dims[axis] = replace(dims[axis], name=new)
+        return Field(self.complex_amplitude, self.grid, self.spectrum, tuple(dims))
+
+    def _coherent_reduce(self, name: str, *, mean: bool) -> Field:
+        axis = self.axis(name)
+        if mean and self.dimensions[axis].size == 0:
+            raise ValueError("Cannot coherently average an empty dimension.")
+        amplitude = (
+            self.complex_amplitude.mean(axis)
+            if mean
+            else self.complex_amplitude.sum(axis)
+        )
+        return Field(
+            amplitude,
+            self.grid,
+            self.spectrum,
+            self.dimensions[:axis] + self.dimensions[axis + 1 :],
+        )
+
+    def coherent_sum(self, name: str) -> Field:
+        """Sum complex amplitudes, preserving interference (not an exposure)."""
+        return self._coherent_reduce(name, mean=False)
+
+    def coherent_mean(self, name: str) -> Field:
+        """Average complex amplitudes, preserving interference (not an exposure)."""
+        return self._coherent_reduce(name, mean=True)
+
+    def expand_dimension(self, dimension: FieldDimension) -> Field:
+        """Append an explicitly declared latent axis before wavelength."""
+        shape = (
+            *self.complex_amplitude.shape[:-3],
+            dimension.size,
+            *self.complex_amplitude.shape[-3:],
+        )
+        return Field(
+            self.complex_amplitude.unsqueeze(-4).expand(shape),
+            self.grid,
+            self.spectrum,
+            self.dimensions + (dimension,),
+        )
+
+    def apply_opd(self, opd: torch.Tensor, *, dimensions=()) -> Field:
+        """Apply OPD in metres, aligning declared axes by name.
+
+        Existing field axes keep their order; new OPD axes are appended. Shared
+        descriptors must match exactly. Undeclared OPD batch axes are rejected.
+        """
+        dimensions = validate_dimensions(
+            dimensions,
+            device=self.complex_amplitude.device,
+            dtype=self.complex_amplitude.real.dtype,
+        )
+        if not isinstance(opd, torch.Tensor) or not opd.is_floating_point():
+            raise TypeError("OPD must be a real floating tensor in metres.")
+        if (
+            opd.device != self.complex_amplitude.device
+            or opd.dtype != self.complex_amplitude.real.dtype
+        ):
+            raise ValueError("OPD must share the field device and real dtype.")
+        if tuple(opd.shape) != (
+            *(d.size for d in dimensions),
+            self.grid.ny,
+            self.grid.nx,
+        ):
+            raise ValueError(
+                "OPD shape must match its declared dimensions and spatial grid."
+            )
+        result = self
+        for d in dimensions:
+            if d.name in {v.name for v in result.dimensions}:
+                if result.dimension(d.name) != d:
+                    raise ValueError(f"Incompatible shared dimension {d.name!r}.")
+            else:
+                result = result.expand_dimension(d)
+        present = [d.name for d in dimensions]
+        order = [present.index(d.name) for d in result.dimensions if d.name in present]
+        opd = opd.permute(*order, len(dimensions), len(dimensions) + 1)
+        shape = [d.size if d.name in present else 1 for d in result.dimensions]
+        opd = opd.reshape(*shape, 1, self.grid.ny, self.grid.nx)
+        wavelength = self.spectrum.wavelengths[:, None, None]
+        return result * torch.exp(2j * torch.pi * opd / wavelength)
+
     def plot(self, wavelength_index: int = -1):
+        if self.dimensions:
+            raise ValueError("Select all latent dimensions before plotting a Field.")
         import matplotlib.pyplot as plt
         import matplotlib.colors as colors
 

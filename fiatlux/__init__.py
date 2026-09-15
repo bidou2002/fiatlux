@@ -15,6 +15,7 @@ from ._version import __version__
 # =========================
 
 from .core.grid import Grid
+from .core.dimensions import FieldDimension
 from .core.field import Field
 from .core.source import Source, PlaneWave, GaussianSource
 from .core.spectrum import Spectrum, PhotometricBand
@@ -114,7 +115,7 @@ from .config.schema import ConfigurationError, validate_config
 __all__ = [
     # Core
     "Grid",
-    "Field",
+    "Field", "FieldDimension",
     "Source",
     "PlaneWave",
     "GaussianSource",
