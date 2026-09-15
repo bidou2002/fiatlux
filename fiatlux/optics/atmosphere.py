@@ -185,6 +185,26 @@ class AtmosphereModel(RandomGeneratorMixin, ABC):
         )
         return phase * (self.reference_wavelength / (2.0 * math.pi))
 
+    def sample_opd_many(self, number: int, *, generator=None, remove_piston=True):
+        """Draw independent screens with batched spatial FFTs.
+
+        Seed replay is deterministic for the same batch shape. PyTorch random
+        kernels need not produce the same draws for different batch partitions.
+        """
+        if not isinstance(number, int) or isinstance(number, bool) or number < 1:
+            raise ValueError("number must be a positive integer.")
+        white = torch.randn((number, self.grid.ny, self.grid.nx), dtype=self.dtype,
+                            device=self.grid.device,
+                            generator=self.generator if generator is None else generator)
+        transfer = torch.sqrt(self.phase_psd * self.frequency_bin_area *
+                              (self.grid.nx * self.grid.ny))
+        if remove_piston:
+            transfer = transfer.clone()
+            transfer[0, 0] = 0
+        phase = torch.fft.ifft2(torch.fft.fft2(white, dim=(-2, -1)) * transfer,
+                                dim=(-2, -1)).real
+        return phase * (self.reference_wavelength / (2 * math.pi))
+
     def plot_psd(self):
         """Plot the phase PSD explicitly and return its figure and axes."""
         return _plot_psd(

@@ -30,7 +30,8 @@ class OpticalElement(ABC):
 
     Unless a concrete element explicitly documents otherwise, ``apply``
     returns a new Field with the incoming grid, spectrum, shape, device, dtype,
-    and physical amplitude units. An element may change amplitude or phase but
+    and physical amplitude units. Spatial axes are (-2, -1), wavelength is -3,
+    and all unrelated leading latent axes and descriptors are preserved. An element may change amplitude or phase but
     does not change spatial sampling; sampling changes belong to Propagator.
     """
 

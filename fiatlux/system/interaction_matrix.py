@@ -79,6 +79,9 @@ class InteractionMatrix:
     def _get_response(self, expected_shape: torch.Size | None = None) -> torch.Tensor:
         """Acquire and validate one measurement without changing its shape."""
         response = self.acquiring_function()
+        from fiatlux.optics.detector import DetectorImage
+        if isinstance(response, DetectorImage):
+            raise ValueError("Acquisition must explicitly reduce remaining latent dimensions before calibration.")
         if not isinstance(response, torch.Tensor):
             raise TypeError("acquiring_function must return a torch.Tensor.")
         if response.numel() == 0:

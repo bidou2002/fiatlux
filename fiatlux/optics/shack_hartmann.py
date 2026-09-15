@@ -559,6 +559,8 @@ class ShackHartmannLensletArray:
     def propagate(self, field: Field) -> ShackHartmannImage:
         """Window the pupil and form all spectral lenslet spots in one batch."""
         validate_field_grid(field, self.grid, self.__class__.__name__)
+        if field.dimensions:
+            raise ValueError("ShackHartmannLensletArray does not yet support latent Fields; select each latent sample explicitly.")
         stop_x = self.start_x + self.n_lenslets_x * self.samples_x
         stop_y = self.start_y + self.n_lenslets_y * self.samples_y
         cropped = field.complex_amplitude[
