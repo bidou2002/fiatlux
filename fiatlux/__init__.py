@@ -41,6 +41,8 @@ from .optics.propagator import (
 )
 from .optics.detector import Detector, DetectorImage, ExposureAccumulator
 from .optics.adc import ADCDispersionModel
+from fiatlux.optics.tabulated_atmosphere import TabulatedAtmosphereModel
+from .optics.tiptop import tiptop_psd, load_harmoni_scao_config, TiptopPSDResult, TiptopSamplingError
 from .optics.atmosphere import AtmosphereModel, KolmogorovAtmosphereModel, NCPAModel
 from .optics.pupil_validation import PupilComparison, compare_pupil_masks
 from .optics.turbulence_validation import (
@@ -137,6 +139,8 @@ __all__ = [
     "ExposureAccumulator",
     "ADCDispersionModel",
     "AtmosphereModel",
+    "TabulatedAtmosphereModel",
+    "tiptop_psd", "load_harmoni_scao_config", "TiptopPSDResult", "TiptopSamplingError",
     "KolmogorovAtmosphereModel",
     "NCPAModel",
     "PupilComparison",

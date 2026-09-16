@@ -35,6 +35,7 @@ Repository = "https://github.com/bidou2002/fiatlux"
 Issues = "https://github.com/bidou2002/fiatlux/issues"
 
 [project.optional-dependencies]
+tiptop = ["astro-tiptop==1.5.1", "astro-p3==1.6.2"]
 fits = ["astropy>=5"]
 plot = ["matplotlib>=3.6"]
 tutorials = [

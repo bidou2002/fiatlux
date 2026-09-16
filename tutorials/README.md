@@ -22,3 +22,6 @@ consistency.
 
 13. `12_named_latent_dimensions.ipynb` — Frozen-cube loop/batch equivalence,
     incoherent exposures, chunking and an injected temporal FATMOSS backend.
+14. `13_tiptop_residual_psds.ipynb` — FIATLUX-owned Fourier sampling, exact-grid
+    HARMONI SCAO PSDs, component images and Monte-Carlo variance validation.
+    Requires the optional `tiptop` extra; runs in a dedicated CI job.

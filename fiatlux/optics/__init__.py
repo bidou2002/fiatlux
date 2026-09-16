@@ -1,4 +1,5 @@
 from .adc import ADCDispersionModel
+from .tabulated_atmosphere import TabulatedAtmosphereModel
 from .atmosphere import AtmosphereModel, KolmogorovAtmosphereModel, NCPAModel
 from .detector import Detector
 from .propagator import (
@@ -32,6 +33,7 @@ from .fatmoss import (
 __all__ = [
     "ADCDispersionModel",
     "AtmosphereModel",
+    "TabulatedAtmosphereModel",
     "KolmogorovAtmosphereModel",
     "NCPAModel",
     "Detector",

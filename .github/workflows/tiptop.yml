@@ -1,0 +1,19 @@
+name: TIPTOP integration
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  tiptop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install '.[tiptop,tutorials,dev]'
+      - run: python -m pytest tests/test_tiptop.py tests/test_tabulated_atmosphere.py -q
+      - name: Execute exact-grid tutorial
+        env:
+          MPLBACKEND: Agg
+        run: python -m jupyter nbconvert --to notebook --execute --ExecutePreprocessor.timeout=180 --output-dir=/tmp tutorials/13_tiptop_residual_psds.ipynb
