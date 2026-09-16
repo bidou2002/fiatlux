@@ -9,8 +9,8 @@ from .atmosphere import AtmosphereModel
 class TabulatedAtmosphereModel(AtmosphereModel):
     """Independent Gaussian OPD screens from centered power per Fourier bin.
 
-    ``power_nm2`` is a real ``(ny, nx)`` array in nm² per bin, as returned
-    by TIPTOP ``simulation.PSD[source]`` (not a density in nm² m²).
+    ``power_nm2`` is a real ``(ny, nx)`` array in nm² per FIATLUX bin
+    (not raw P3 bin power or a density in nm² m²).
     ``frequency_step`` is a positive scalar in cycles/metre. The conjugate
     spatial grid must be supplied by FIATLUX and is never changed.
 

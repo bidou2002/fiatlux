@@ -4,8 +4,8 @@ Validated against astro-tiptop 1.5.1 / astro-p3 1.6.2. No PSD interpolation.
 P3 fourierModel.powerSpectrumDensity returns centered OPD **bin power** in
 nm²: its final multiplier is (dk * wavelength_nm / (2*pi))², where
 dk = 2*kcMax_/resAO (not necessarily PSDstep, because resAO is truncated).
-Thus canonical phase density is bin_power * (2*pi*1e-9/lambda)² / df².
-We preserve P3's bin powers; we never fit an RMS or multiply by dk again.
+Recover continuous OPD density as bin_power * 1e-18 / dk² before exact
+frequency extraction. FIATLUX integrates with its own df², never P3's bin area.
 P3 uses (x,y,source); FIATLUX uses (source,y,x) and unshifted FFT PSDs.
 """
 import ast
@@ -69,121 +69,116 @@ def _sampling(pixel_scale, wavelengths, diameter):
     return float(steps[i]), int(np.ceil(kref_float)), k, samp * k
 
 
-def configure_tiptop_sampling(grid, config, *, explicit_sampling=False):
-    """Return a deep copy of configuration; never modify grid or input config.
+def configure_tiptop_sampling(grid, config, *, sampling_ratio=None):
+    """Configure an auxiliary P3 grid containing every FIATLUX frequency.
 
-    Search piecewise-constant P3 oversampling regimes. The minimum PSD step
-    can be supplied by any wavelength, not necessarily the shortest one.
-    An explicit user PixelScale can instead be passed to tiptop_psd.
+    Search integer refinement ratios and P3 camera oversampling regimes.
+    Only P3's camera configuration is changed; the simulation Grid is input.
     """
-    df, _ = _target(grid)
+    df, target = _target(grid)
     cfg = copy.deepcopy(config)
     wavelengths = np.unique(np.atleast_1d(cfg["sources_science"]["Wavelength"]).astype(float))
     if not np.isfinite(wavelengths).all() or (wavelengths <= 0).any():
         raise ValueError("Science wavelengths must be finite and positive.")
     sensor = cfg["sensor_science"]
     if sensor.get("SpectralBandwidth", 0) != 0 or len(sensor.get("Transmittance", [1])) != 1:
-        raise ValueError("Supply explicit science wavelengths with zero sensor bandwidth and one transmittance bin.")
+        raise ValueError("Supply explicit wavelengths, zero sensor bandwidth and one transmittance bin.")
     diameter = float(cfg["telescope"]["TelescopeDiameter"])
     if not math.isfinite(diameter) or diameter <= 0:
         raise ValueError("TelescopeDiameter must be positive and finite.")
-    # For every channel, k=ceil(2/samp) implies PSDstep <= 1/(2D).
-    if df > 1 / (2 * diameter) * (1 + 1e-12) and not explicit_sampling:
-        raise TiptopSamplingError(
-            f"FIATLUX df={df:.12g} cycles/m exceeds P3's configuration limit "
-            f"1/(2D)={1/(2*diameter):.12g}. No PixelScale/FieldOfView pair can match. "
-            "Keep FIATLUX unchanged; explicitly request explicit_sampling=True to use the pinned P3 frequency-domain adapter.")
-    candidates = []
-    for factor in range(1, 65):
-        for wavelength in wavelengths:
-            pixel = df * wavelength * RAD2MAS * factor
-            step, kref, _, _ = _sampling(pixel, wavelengths, diameter)
-            if math.isclose(step, df, rel_tol=1e-11, abs_tol=1e-14):
-                n = math.ceil(grid.nx / kref) * kref
-                candidates.append((n, factor, pixel, kref))
-    if candidates:
-        _, _, pixel, kref = min(candidates)
-    elif explicit_sampling:
-        # This nominal camera configuration only initializes P3 metadata.
-        # The opt-in frequency-domain adapter supplies df and N directly.
-        pixel = df * wavelengths.min() * RAD2MAS
-        _, kref, _, _ = _sampling(pixel, wavelengths, diameter)
-    else:
-        raise TiptopSamplingError("No exact camera sampling found in P3 oversampling factors 1..64; FIATLUX was not changed.")
-    sensor["PixelScale"] = float(pixel)
-    sensor["FieldOfView"] = math.ceil(grid.nx / kref)
-    return cfg
+    if sampling_ratio is not None and (isinstance(sampling_ratio, bool) or
+            not isinstance(sampling_ratio, int) or sampling_ratio < 1):
+        raise ValueError("sampling_ratio must be a positive integer.")
+    ratios = [sampling_ratio] if sampling_ratio is not None else range(1, 65)
+    for q in ratios:
+        target_step = df / q
+        if target_step > 1/(2*diameter)*(1+1e-12):
+            continue
+        candidates = []
+        for factor in range(1, 65):
+            for wavelength in wavelengths:
+                nominal = target_step * wavelength * RAD2MAS * factor
+                # Avoid ceil changing regime at an exactly integral boundary.
+                for pixel in [nominal, np.nextafter(nominal, 0)]:
+                    step, kref, _, _ = _sampling(pixel, wavelengths, diameter)
+                    if not math.isclose(step, target_step, rel_tol=1e-11, abs_tol=1e-14):
+                        continue
+                    # Both endpoints matter for odd/even target and source grids.
+                    negative = q * (grid.nx // 2)
+                    positive = q * ((grid.nx - 1)//2)
+                    minimum_size = max(2*negative, 2*positive+1)
+                    # P3 must also contain its own AO-corrected support.
+                    minimum_size = max(minimum_size, math.ceil(1/min(cfg["DM"]["DmPitchs"])/step))
+                    fov = math.ceil(minimum_size/kref)
+                    candidates.append((fov*kref, factor, float(pixel), fov))
+        if candidates:
+            _, _, pixel, fov = min(candidates)
+            sensor.update(PixelScale=pixel, FieldOfView=fov)
+            return cfg
+    raise TiptopSamplingError("No compatible auxiliary grid found in the requested integer ratios / camera regimes (1..64); FIATLUX was not changed.")
+
+
+def exact_frequency_indices(source, target, *, atol=2e-10, rtol=1e-10):
+    """Locate actual samples, never interpolate, average or blindly stride.
+
+    The absolute tolerance accommodates P3's documented 1e-10 cycles/m offset.
+    Reject ambiguous matches, missing endpoints and nonmonotone coordinates.
+    """
+    source, target = np.asarray(source), np.asarray(target)
+    if source.ndim != 1 or target.ndim != 1 or len(source) < 2 or len(target) < 2:
+        raise TiptopSamplingError("Frequency coordinates must be one-dimensional arrays of size >= 2.")
+    if not (np.isfinite(source).all() and np.isfinite(target).all() and
+            np.all(np.diff(source)>0) and np.all(np.diff(target)>0)):
+        raise TiptopSamplingError("Frequency coordinates must be finite and strictly increasing.")
+    right = np.searchsorted(source, target)
+    left = np.clip(right-1, 0, len(source)-1)
+    right = np.clip(right, 0, len(source)-1)
+    indices = np.where(abs(source[left]-target) <= abs(source[right]-target), left, right)
+    if not np.allclose(source[indices], target, atol=atol, rtol=rtol) or len(np.unique(indices)) != len(target):
+        raise TiptopSamplingError("FIATLUX frequencies are not an exact subset of P3; no interpolation allowed.")
+    if np.min(np.diff(source)) <= 2*(atol+rtol*np.max(abs(target))):
+        raise TiptopSamplingError("Frequency tolerance would allow ambiguous source samples.")
+    return indices
 
 
 def verify_tiptop_frequency_grid(grid, frequency):
-    """Verify actual P3 coordinates and return an exact centered crop slice.
-
-    P3 adds a documented 1e-10 cycles/m offset to avoid singularities. Only
-    this numerical offset (2e-10 absolute tolerance) is accepted at DC.
-    Parity-aware integer slices align DC even when input/output sizes differ.
-    """
+    """Check integer step ratio, coverage and actual 2D P3 coordinates."""
     df, target = _target(grid)
+    step = float(frequency.PSDstep)
+    if not math.isfinite(step) or step <= 0:
+        raise TiptopSamplingError("P3 PSDstep must be positive and finite.")
+    q = df/step
+    if round(q) < 1 or not math.isclose(q, round(q), rel_tol=1e-10, abs_tol=1e-10):
+        raise TiptopSamplingError("Noninteger FIATLUX/P3 frequency-step ratio; no interpolation allowed.")
     n = int(frequency.nOtf)
-    if n < grid.nx or not math.isclose(float(frequency.PSDstep), df, rel_tol=1e-10, abs_tol=1e-14):
-        raise TiptopSamplingError(f"P3 nOtf={n}, PSDstep={float(frequency.PSDstep):.12g}; FIATLUX N={grid.nx}, df={df:.12g}. No interpolation allowed.")
-    start = n // 2 - grid.nx // 2
-    crop = slice(start, start + grid.nx)
     kx, ky = _cpu(frequency.kx_), _cpu(frequency.ky_)
-    if kx.shape != (n, n) or ky.shape != (n, n):
+    if kx.shape != (n,n) or ky.shape != (n,n):
         raise TiptopSamplingError("Unexpected P3 coordinate shapes.")
-    if not (np.allclose(kx[crop, crop], target[:, None], rtol=1e-10, atol=2e-10)
-            and np.allclose(ky[crop, crop], target[None, :], rtol=1e-10, atol=2e-10)):
-        raise TiptopSamplingError("Actual P3 kx_/ky_ samples do not match FIATLUX; no interpolation allowed.")
-    return crop
-
-
-def _explicit_frequency_domain(ao, grid):
-    """Small P3-side sampling hook through fourierModel's public freq= API.
-
-    P3 1.6.2's constructor assigns PSDstep and nOtf before constructing any
-    coordinates, AO support, masks, filters or covariances. Local properties
-    replace only those two assignments. All subsequent quantities are built
-    by P3 from the requested sampling. No global monkeypatch or post-hoc
-    coordinate replacement. This adapter is PSD-only, not a TIPTOP PSF API.
-    The ideal upstream change is two optional constructor keywords at those
-    assignment sites; the version gate prevents silently relying on new code.
-    """
-    if version("astro-p3") != "1.6.2":
-        raise TiptopSamplingError("Explicit P3 sampling is validated only for astro-p3==1.6.2.")
-    from p3.aoSystem.frequencyDomain import frequencyDomain
-    df, _ = _target(grid)
-
-    class TargetFrequencyDomain(frequencyDomain):
-        @property
-        def PSDstep(self):
-            return self._target_step
-
-        @PSDstep.setter
-        def PSDstep(self, value):
-            self._target_step = df
-
-        @property
-        def nOtf(self):
-            return self._target_size
-
-        @nOtf.setter
-        def nOtf(self, value):
-            self._target_size = grid.nx
-            # Pupil/OTF sampling for this explicitly supplied frequency grid.
-            self.sampRef = 1 / (float(ao.tel.D) * df)
-
-    return TargetFrequencyDomain(ao, computeFocalAnisoCov=False, dtype=ao.dtype)
+    if not (np.allclose(np.diff(kx[:, n//2]), step, rtol=1e-10, atol=1e-14)
+            and np.allclose(np.diff(ky[n//2, :]), step, rtol=1e-10, atol=1e-14)):
+        raise TiptopSamplingError("Actual P3 coordinate increments disagree with PSDstep.")
+    ix = exact_frequency_indices(kx[:, n//2], target)
+    iy = exact_frequency_indices(ky[n//2, :], target)
+    if not (np.allclose(kx[np.ix_(ix,iy)], target[:,None], atol=2e-10, rtol=1e-10)
+            and np.allclose(ky[np.ix_(ix,iy)], target[None,:], atol=2e-10, rtol=1e-10)):
+        raise TiptopSamplingError("Actual P3 2D coordinates differ from the requested FIATLUX grid.")
+    return ix, iy
 
 
 @dataclass
 class TiptopPSDResult:
     """Residual at each science direction, with the original FIATLUX grid."""
     grid: object
-    power_nm2: torch.Tensor  # centered (source,y,x), before optional symmetry
+    power_nm2: torch.Tensor  # FIATLUX bin powers: sampled density * df_F² [nm²]
     frequency_step: float
     config: dict
     diagnostics: dict
     components_nm2: dict
+    p3_frequency_x: np.ndarray
+    p3_frequency_y: np.ndarray
+    indices_x: np.ndarray
+    indices_y: np.ndarray
+    selected_p3_power_nm2: torch.Tensor
 
     @property
     def opd_psd(self):
@@ -197,7 +192,7 @@ class TiptopPSDResult:
             symmetrize=symmetrize, seed=seed)
 
 
-def tiptop_psd(grid, *, config=None, overrides=None, explicit_sampling=False,
+def tiptop_psd(grid, *, config=None, overrides=None, sampling_ratio=None,
                pixel_scale=None, field_of_view=None, path_root=None):
     """Evaluate the HARMONI SCAO NGS residual PSD on an existing FIATLUX grid.
 
@@ -205,7 +200,8 @@ def tiptop_psd(grid, *, config=None, overrides=None, explicit_sampling=False,
     atmosphere, WFS photons, etc.). HCM2 science magnitude is NOT a WFS flux:
     set sensor_HO.NumberPhotons using a calibrated guide-star photometric
     model. PixelScale/FieldOfView only control the P3 evaluator, never FIATLUX.
-    Config-only incompatibility fails unless explicit_sampling is opted in.
+    sampling_ratio optionally requests an integer df_F/df_P; otherwise search.
+    Incompatible coordinates fail explicitly, without any sampling override.
     Static maps are not random residual PSDs. Extra LO jitter is not modeled
     by this NGS SCAO adapter. No temporal evolution is implied by a PSD.
     """
@@ -216,7 +212,7 @@ def tiptop_psd(grid, *, config=None, overrides=None, explicit_sampling=False,
     cfg = copy.deepcopy(load_harmoni_scao_config() if config is None else config)
     for section, values in (overrides or {}).items():
         cfg.setdefault(section, {}).update(copy.deepcopy(values))
-    cfg = configure_tiptop_sampling(grid, cfg, explicit_sampling=explicit_sampling)
+    cfg = configure_tiptop_sampling(grid, cfg, sampling_ratio=sampling_ratio)
     sensor_overrides = (overrides or {}).get("sensor_science", {})
     pixel_scale = sensor_overrides.get("PixelScale") if pixel_scale is None else pixel_scale
     field_of_view = sensor_overrides.get("FieldOfView") if field_of_view is None else field_of_view
@@ -232,26 +228,30 @@ def tiptop_psd(grid, *, config=None, overrides=None, explicit_sampling=False,
     ao = aoSystem(None, path_root=root, config_dict=cfg, psdExpansion=True, verbose=False)
     if ao.aoMode != "SCAO" or ao.ngs.nSrc != 1:
         raise ValueError("This adapter supports single-NGS SCAO only.")
-    frequency = (_explicit_frequency_domain(ao, grid) if explicit_sampling else
-                 frequencyDomain(ao, computeFocalAnisoCov=False, dtype=ao.dtype))
-    crop = verify_tiptop_frequency_grid(grid, frequency)
+    frequency = frequencyDomain(ao, computeFocalAnisoCov=False, dtype=ao.dtype)
+    ix, iy = verify_tiptop_frequency_grid(grid, frequency)
     if frequency.nOtf < frequency.resAO:
-        raise TiptopSamplingError("P3 AO support exceeds target frequency coverage; increase P3 FieldOfView for a same-df crop, not the FIATLUX grid.")
+        raise TiptopSamplingError("P3 auxiliary grid cannot contain its AO support; increase P3 FieldOfView without changing FIATLUX.")
     model = fourierModel(None, ao=ao, freq=frequency, calcPSF=False, display=False,
                         verbose=False, computeFocalAnisoCov=False,
                         getErrorBreakDown=True, reduce_memory=False)
     verify_tiptop_frequency_grid(grid, frequency)
     raw = _cpu(model.PSD)
-    power = np.moveaxis(raw[crop, crop, :], -1, 0).transpose(0, 2, 1).copy()
+    selected = raw[ix[:,None], iy[None,:], :].transpose(2,1,0).copy()
+    df = 1/(grid.nx*grid.dx)
+    dk = float(2*frequency.kcMax_/frequency.resAO)
+    # Undo P3's integrated-bin factor, select density, integrate on FIATLUX.
+    power = selected / dk**2 * df**2
     tensor = torch.as_tensor(power, dtype=grid.dtype, device=grid.device)
     if not torch.isfinite(tensor).all() or (tensor < 0).any():
         raise ValueError("P3 produced nonfinite or negative residual power.")
     diagnostics = dict(p3_version=version("astro-p3"), tiptop_version=version("astro-tiptop"),
-        mode="explicit P3 frequency domain" if explicit_sampling else "camera configuration",
+        mode="exact frequency-grid extraction",
         nOtf=int(frequency.nOtf), target_N=grid.nx, PSDstep=float(frequency.PSDstep),
         target_df=1/(grid.nx*grid.dx), k_= _cpu(frequency.k_).tolist(),
         kRef_=int(frequency.kRef_), samp=_cpu(frequency.samp).tolist(),
-        crop_start=crop.start, crop_stop=crop.stop,
+        sampling_ratio=int(round(df/float(frequency.PSDstep))),
+        selected_index_first=int(ix[0]), selected_index_last=int(ix[-1]),
         rms_nm=np.sqrt(power.sum((1, 2))).tolist(),
         full_p3_rms_nm=np.sqrt(raw.sum((0, 1))).tolist(),
         p3_normalization_dk=float(2*frequency.kcMax_/frequency.resAO),
@@ -276,7 +276,10 @@ def tiptop_psd(grid, *, config=None, overrides=None, explicit_sampling=False,
             full[lo:hi, lo:hi] = values * scale
         else:
             raise ValueError(f"Unexpected P3 component shape for {name}: {values.shape}")
-        data = full[crop, crop].transpose(2, 1, 0).copy()
+        data = full[ix[:,None], iy[None,:], :].transpose(2,1,0).copy() / dk**2 * df**2
         components[name] = torch.as_tensor(data, dtype=grid.dtype, device=grid.device)
     diagnostics["component_sum_matches_total"] = bool(torch.allclose(sum(components.values()), tensor, rtol=1e-8, atol=1e-10)) if components else False
-    return TiptopPSDResult(grid, tensor, float(frequency.PSDstep), cfg, diagnostics, components)
+    return TiptopPSDResult(grid, tensor, df, cfg, diagnostics, components,
+        _cpu(frequency.kx_)[:, int(frequency.nOtf)//2].copy(),
+        _cpu(frequency.ky_)[int(frequency.nOtf)//2, :].copy(), ix, iy,
+        torch.as_tensor(selected, dtype=grid.dtype, device=grid.device))
