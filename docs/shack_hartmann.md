@@ -154,3 +154,12 @@ generic `InteractionMatrix` with `measurement.slope_vector`. It calibrates tip,
 tilt and defocus by push–pull, filters the SVD pseudo-inverse, reconstructs
 known modal coefficients and demonstrates closed-loop convergence. The
 notebook executes from a clean kernel in CI.
+
+The ±10 nm calibration measures a local response, not a globally linear
+centroid model. The one-step reconstruction check uses [12, −8, 6] nm modal
+coefficients and retains its 4% / 0.2 nm tolerance. A larger [30, −20, 15] nm
+injection produces about 10.37% maximum one-step relative error on this bench;
+the tutorial uses that case for iterative closed-loop correction instead.
+It checks both decreasing measured slopes and recovery of the opposite modal
+coefficients. This distinction prevents a small-signal accuracy assertion from
+being applied outside its validated range.

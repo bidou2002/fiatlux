@@ -68,8 +68,9 @@ def test_flat_and_low_order_zernike_responses_calibrate_with_expected_dtype(dtyp
     assert torch.all(torch.linalg.vector_norm(matrix, dim=0) > 0)
 
 
-def test_interaction_matrix_recovers_tip_tilt_and_defocus_coefficients():
-    field, aberration, correction, sensor, estimator = make_bench()
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_interaction_matrix_recovers_tip_tilt_and_defocus_coefficients(dtype):
+    field, aberration, correction, sensor, estimator = make_bench(dtype=dtype)
     calibration = InteractionMatrix(
         correction,
         lambda: slopes(field, correction, sensor, estimator),
@@ -86,8 +87,9 @@ def test_interaction_matrix_recovers_tip_tilt_and_defocus_coefficients():
     torch.testing.assert_close(reconstructed, injected, rtol=0.04, atol=0.2e-9)
 
 
-def test_closed_loop_reduces_low_order_residual():
-    field, aberration, correction, sensor, estimator = make_bench()
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_closed_loop_reduces_low_order_residual(dtype):
+    field, aberration, correction, sensor, estimator = make_bench(dtype=dtype)
     calibration = InteractionMatrix(
         correction,
         lambda: slopes(field, correction, sensor, estimator),
@@ -100,7 +102,7 @@ def test_closed_loop_reduces_low_order_residual():
     )
 
     residuals = []
-    for _ in range(6):
+    for _ in range(7):
         measurement = slopes(
             aberration.apply(field), correction, sensor, estimator
         )
@@ -109,6 +111,10 @@ def test_closed_loop_reduces_low_order_residual():
 
     assert residuals[-1] < 0.02 * residuals[0]
     assert all(after < before for before, after in zip(residuals, residuals[1:]))
+    # Validate the physical correction as well as the measured slope residual.
+    torch.testing.assert_close(
+        correction.commands, -aberration.commands, rtol=0.005, atol=0.05e-9
+    )
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
