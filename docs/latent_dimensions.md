@@ -133,6 +133,34 @@ Float32 BLAS summation order can differ between batch shapes; tests use an
 explicit eight-epsilon absolute/relative roundoff bound, while scientific
 validation runs in float64 and reports raw errors.
 
+`tests/test_atmosphere_buffer.py` captures the exact OPD cube returned to
+`Atmosphere.apply_buffer` and uses those samples for the scalar reference.
+Small float32/float64 cases compare complex fields and noiseless integrated
+counts for monochromatic FFT, polychromatic MFT, Fresnel MFT and a static DM.
+Propagation cases use rectangular grids; the Zernike DM case uses a square
+grid because the current `ZernikeBasis` constructs square modes.
+Diagnostics report maximum absolute, pointwise relative and RMS errors without
+renormalization. Existing tests also use opposite-phase samples to distinguish
+incoherent integration from coherent averaging.
+
+The correlated-sequence test uses the existing injected translating backend
+with a seeded OPD scale. It verifies scalar/buffer sample identity, correlation,
+reset/replay, nonzero start time, both advancement modes and chunk partitions.
+The same test optionally exercises real FATMOSS when `phase_generator` is
+importable (see [installation](fatmoss.md#installation)); otherwise only that
+parameter is skipped. Run it with:
+
+```bash
+python -m pytest -q -s tests/test_atmosphere_buffer.py
+```
+
+Tutorial 12 displays buffer shapes, OPD samples, a long-exposure image and raw
+error metrics. It can be executed independently if an earlier tutorial fails:
+
+```bash
+jupyter nbconvert --to notebook --execute tutorials/12_named_latent_dimensions.ipynb --output-dir /tmp/fiatlux-validation
+```
+
 ```bash
 python benchmarks/latent_dimensions.py --output latent-benchmark.json
 ```
