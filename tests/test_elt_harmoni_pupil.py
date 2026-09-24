@@ -31,7 +31,8 @@ def test_outer_circular_mask_is_optional_but_central_obscuration_remains():
     x, y = grid.meshgrid()
     squared_radius = x.square() + y.square()
     inside_obscuration = squared_radius < segments_only.central_obscuration_radius**2
-    outside_outer_disk = squared_radius > segments_only.outer_radius**2
+    radius = torch.sqrt(squared_radius)
+    outside_outer_disk = radius > segments_only.outer_radius + 0.5 * grid.dx
 
     assert segments_only.circular_mask is False
     assert torch.all(segments_only.transmission[inside_obscuration] == 0)
