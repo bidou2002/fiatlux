@@ -11,9 +11,11 @@ def _build(pupil: ELTHarmoniPupil) -> None:
     pupil.build(Spectrum(0, Band(1e-6, 0.0, 1.0), 1, dtype=pupil.grid.dtype))
 
 
-def test_default_pupil_is_symmetric_and_has_plausible_collecting_area():
+def test_circularly_masked_pupil_is_symmetric_and_has_plausible_collecting_area():
     grid = Grid(401, 401, 0.12, 0.12, dtype=torch.float64)
-    pupil = ELTHarmoniPupil(grid, spider_width=0.0, petal_gap=0.0)
+    pupil = ELTHarmoniPupil(
+        grid, spider_width=0.0, petal_gap=0.0, circular_mask=True
+    )
     _build(pupil)
 
     sampled_area = float(pupil.transmission.sum() * grid.dx * grid.dy)
