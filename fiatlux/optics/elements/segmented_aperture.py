@@ -196,8 +196,10 @@ class ELTHarmoniPupil(HexagonalSegmentedAperture):
     """Self-contained analytical ELT pupil for HARMONI simulations.
 
     Lengths are metres in the entrance-pupil plane. Spider and M4 inter-petal
-    widths are projected widths in that plane. Defaults describe a 37 m filled
-    M1 annulus made from 798 reflective 1.45 m corner-to-corner segments.
+    widths are projected widths in that plane. Defaults describe 798 reflective
+    1.45 m corner-to-corner segments, the central obscuration, and the ELT
+    spiders. Set ``circular_mask`` to additionally clip the outer edge of the
+    segmented pupil to the ideal 37 m disk defined by ``outer_radius``.
     """
 
     def __init__(
@@ -206,6 +208,7 @@ class ELTHarmoniPupil(HexagonalSegmentedAperture):
         *,
         outer_radius: float = 18.5,
         central_obscuration_radius: float = 5.5,
+        circular_mask: bool = False,
         segment_circumradius: float = 0.725,
         segment_gap: float = 0.004,
         segment_count: int = 798,
@@ -227,6 +230,8 @@ class ELTHarmoniPupil(HexagonalSegmentedAperture):
                 raise ValueError(f"{name} must be finite and non-negative.")
         if central_obscuration_radius >= outer_radius:
             raise ValueError("central_obscuration_radius must be smaller than outer_radius.")
+        if not isinstance(circular_mask, bool):
+            raise TypeError("circular_mask must be a boolean.")
         if not spider_angles or not all(math.isfinite(angle) for angle in spider_angles):
             raise ValueError("spider_angles must contain finite angles in degrees.")
         if not math.isfinite(petal_rotation):
@@ -244,6 +249,7 @@ class ELTHarmoniPupil(HexagonalSegmentedAperture):
         )
         self.outer_radius = float(outer_radius)
         self.central_obscuration_radius = float(central_obscuration_radius)
+        self.circular_mask = circular_mask
         self.spider_width = float(spider_width)
         self.spider_angles = tuple(float(angle) for angle in spider_angles)
         self.petal_gap = float(petal_gap)
@@ -270,9 +276,9 @@ class ELTHarmoniPupil(HexagonalSegmentedAperture):
         local_x = math.cos(angle) * x + math.sin(angle) * y
         local_y = -math.sin(angle) * x + math.cos(angle) * y
         radius = torch.sqrt(local_x.square() + local_y.square())
-        support = (radius >= self.central_obscuration_radius) & (
-            radius <= self.outer_radius
-        )
+        support = radius >= self.central_obscuration_radius
+        if self.circular_mask:
+            support &= radius <= self.outer_radius
 
         if self.spider_width > 0:
             for spider_angle in self.spider_angles:
