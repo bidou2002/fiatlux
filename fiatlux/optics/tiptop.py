@@ -167,9 +167,16 @@ def verify_tiptop_frequency_grid(grid, frequency):
 
 @dataclass
 class TiptopPSDResult:
-    """Residual at each science direction, with the original FIATLUX grid."""
+    """Corrected and uncorrected turbulence PSDs on the FIATLUX grid.
+
+    ``power_nm2`` remains the TIPTOP residual for backward compatibility.
+    ``uncorrected_power_nm2`` is the open-loop atmospheric spectrum evaluated
+    by P3 from the same atmosphere, including P3's telescope piston filter.
+    Both arrays contain centered power per FIATLUX Fourier bin in nm².
+    """
     grid: object
     power_nm2: torch.Tensor  # FIATLUX bin powers: sampled density * df_F² [nm²]
+    uncorrected_power_nm2: torch.Tensor
     frequency_step: float
     config: dict
     diagnostics: dict
@@ -180,14 +187,43 @@ class TiptopPSDResult:
     indices_y: np.ndarray
     selected_p3_power_nm2: torch.Tensor
 
+    def power(self, psd_type="residual"):
+        """Return centered bin power for ``residual`` or ``uncorrected`` PSD."""
+        if psd_type == "residual":
+            return self.power_nm2
+        if psd_type == "uncorrected":
+            return self.uncorrected_power_nm2
+        raise ValueError(
+            "psd_type must be 'residual' or 'uncorrected', "
+            f"not {psd_type!r}."
+        )
+
+    def opd_psd_for(self, psd_type="residual"):
+        """Return an unshifted OPD density in m⁴ for the selected PSD."""
+        return (torch.fft.ifftshift(self.power(psd_type), dim=(-2, -1))
+                * 1e-18 / self.frequency_step**2)
+
     @property
     def opd_psd(self):
-        """Unshifted OPD density in m^4 = m²/(cycles/m)²."""
-        return torch.fft.ifftshift(self.power_nm2, dim=(-2, -1)) * 1e-18 / self.frequency_step**2
+        """Unshifted residual OPD density in m⁴ = m²/(cycles/m)²."""
+        return self.opd_psd_for("residual")
+
+    @property
+    def uncorrected_opd_psd(self):
+        """Unshifted open-loop OPD density in m⁴."""
+        return self.opd_psd_for("uncorrected")
 
     def atmosphere_model(self, source=0, *, reference_wavelength=500e-9,
-                         symmetrize=False, seed=None):
-        return TabulatedAtmosphereModel(self.grid, self.power_nm2[source],
+                         symmetrize=False, seed=None, psd_type="residual"):
+        """Build a sampler from the residual or uncorrected TIPTOP PSD."""
+        power = self.power(psd_type)
+        if isinstance(source, bool) or not isinstance(source, int):
+            raise TypeError("source must be an integer index.")
+        if not 0 <= source < power.shape[0]:
+            raise IndexError(
+                f"source index {source} outside [0, {power.shape[0] - 1}]."
+            )
+        return TabulatedAtmosphereModel(self.grid, power[source],
             frequency_step=self.frequency_step, reference_wavelength=reference_wavelength,
             symmetrize=symmetrize, seed=seed)
 
@@ -209,6 +245,7 @@ def tiptop_psd(grid, *, config=None, overrides=None, sampling_ratio=None,
     from p3.aoSystem.aoSystem import aoSystem
     from p3.aoSystem.frequencyDomain import frequencyDomain
     from p3.aoSystem.fourierModel import fourierModel
+    from p3.aoSystem.FourierUtils import pistonFilter
     cfg = copy.deepcopy(load_harmoni_scao_config() if config is None else config)
     for section, values in (overrides or {}).items():
         cfg.setdefault(section, {}).update(copy.deepcopy(values))
@@ -240,11 +277,29 @@ def tiptop_psd(grid, *, config=None, overrides=None, sampling_ratio=None,
     selected = raw[ix[:,None], iy[None,:], :].transpose(2,1,0).copy()
     df = 1/(grid.nx*grid.dx)
     dk = float(2*frequency.kcMax_/frequency.resAO)
+    rad2nm = float(frequency.wvlRef) * 1e9 / (2 * math.pi)
+    # This is exactly P3's OPEN-LOOP branch in
+    # fourierModel.powerSpectrumDensity(): the atmospheric phase spectrum,
+    # with the same telescope piston filter and P3 bin-power normalization.
+    spatial_frequency = np.sqrt(_cpu(frequency.k2_))
+    open_loop_density = (_cpu(ao.atm.spectrum(spatial_frequency))
+                         * _cpu(pistonFilter(ao.tel.D, spatial_frequency,
+                                             dtype=ao.dtype)))
+    raw_uncorrected_2d = open_loop_density * (dk * rad2nm) ** 2
+    raw_uncorrected = np.repeat(raw_uncorrected_2d[:, :, None], raw.shape[2], axis=2)
+    selected_uncorrected = raw_uncorrected[ix[:,None], iy[None,:], :].transpose(2,1,0).copy()
     # Undo P3's integrated-bin factor, select density, integrate on FIATLUX.
     power = selected / dk**2 * df**2
     tensor = torch.as_tensor(power, dtype=grid.dtype, device=grid.device)
     if not torch.isfinite(tensor).all() or (tensor < 0).any():
         raise ValueError("P3 produced nonfinite or negative residual power.")
+    uncorrected_power = selected_uncorrected / dk**2 * df**2
+    uncorrected_tensor = torch.as_tensor(
+        uncorrected_power, dtype=grid.dtype, device=grid.device
+    )
+    if (not torch.isfinite(uncorrected_tensor).all()
+            or (uncorrected_tensor < 0).any()):
+        raise ValueError("P3 produced nonfinite or negative uncorrected power.")
     diagnostics = dict(p3_version=version("astro-p3"), tiptop_version=version("astro-tiptop"),
         mode="exact frequency-grid extraction",
         nOtf=int(frequency.nOtf), target_N=grid.nx, PSDstep=float(frequency.PSDstep),
@@ -253,6 +308,7 @@ def tiptop_psd(grid, *, config=None, overrides=None, sampling_ratio=None,
         sampling_ratio=int(round(df/float(frequency.PSDstep))),
         selected_index_first=int(ix[0]), selected_index_last=int(ix[-1]),
         rms_nm=np.sqrt(power.sum((1, 2))).tolist(),
+        uncorrected_rms_nm=np.sqrt(uncorrected_power.sum((1, 2))).tolist(),
         full_p3_rms_nm=np.sqrt(raw.sum((0, 1))).tolist(),
         p3_normalization_dk=float(2*frequency.kcMax_/frequency.resAO),
         ao_cutoff_cycles_per_m=float(frequency.kcMax_))
@@ -279,7 +335,7 @@ def tiptop_psd(grid, *, config=None, overrides=None, sampling_ratio=None,
         data = full[ix[:,None], iy[None,:], :].transpose(2,1,0).copy() / dk**2 * df**2
         components[name] = torch.as_tensor(data, dtype=grid.dtype, device=grid.device)
     diagnostics["component_sum_matches_total"] = bool(torch.allclose(sum(components.values()), tensor, rtol=1e-8, atol=1e-10)) if components else False
-    return TiptopPSDResult(grid, tensor, df, cfg, diagnostics, components,
+    return TiptopPSDResult(grid, tensor, uncorrected_tensor, df, cfg, diagnostics, components,
         _cpu(frequency.kx_)[:, int(frequency.nOtf)//2].copy(),
         _cpu(frequency.ky_)[int(frequency.nOtf)//2, :].copy(), ix, iy,
         torch.as_tensor(selected, dtype=grid.dtype, device=grid.device))
