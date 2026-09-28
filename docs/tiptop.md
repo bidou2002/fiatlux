@@ -22,6 +22,11 @@ result = tiptop_psd(
 assert result.grid is pupil_grid
 model = result.atmosphere_model(symmetrize=True, seed=2026)
 opd = model.sample_opd_many(32)  # metres, independent realizations
+
+# Same TIPTOP atmosphere before AO correction, on the same FIATLUX grid.
+open_loop_model = result.atmosphere_model(
+    psd_type="uncorrected", symmetrize=True, seed=2026
+)
 ```
 
 ## Auxiliary grid contract
@@ -75,9 +80,11 @@ not be equal, even over similar support.
 
 P3 `(x,y,source)` becomes FIATLUX `(source,y,x)`. Result fields:
 
-- `opd_psd`: unshifted density W_F in m⁴.
+- `opd_psd`: unshifted residual density W_F in m⁴.
+- `uncorrected_opd_psd`: unshifted open-loop atmospheric density in m⁴.
 - `selected_p3_power_nm2`: exact raw P3 bin powers at selected indices.
-- `power_nm2`: centered W_F times FIATLUX bin area, expressed in nm².
+- `power_nm2`: centered residual W_F times FIATLUX bin area, in nm².
+- `uncorrected_power_nm2`: the corresponding open-loop atmospheric power.
 - `components_nm2`: the same conversion for exposed error components.
 - `frequency_step`: FIATLUX df; diagnostics contain P3 PSDstep and actual dk.
 
@@ -88,6 +95,13 @@ is a separate screen-generation choice that averages opposite frequencies,
 not neighboring 2x2 cells. It preserves the target-grid integrated power and
 reports the original asymmetry. Full-grid variance is not pupil-weighted,
 piston-subtracted variance.
+
+The uncorrected choice is not reconstructed by adding residual error terms.
+It uses P3's own open-loop expression, `ao.atm.spectrum(k)` multiplied by the
+same telescope piston filter used by `fourierModel.powerSpectrumDensity` when
+the loop gain is zero. It then follows the same exact-sample extraction and
+normalization path as the residual PSD. Use `psd_type="residual"` (the default)
+or `psd_type="uncorrected"` when constructing the atmosphere model.
 
 ## Physical assumptions and scope
 
