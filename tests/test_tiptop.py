@@ -76,11 +76,32 @@ def test_actual_p3_pupil_only_exact_subgrid_and_density(size,q,poly):
     dk=result.diagnostics['p3_normalization_dk']
     density=torch.fft.ifftshift(result.selected_p3_power_nm2,dim=(-2,-1))*1e-18/dk**2
     torch.testing.assert_close(result.opd_psd,density,atol=1e-30,rtol=1e-12)
+    assert result.uncorrected_power_nm2.shape == result.power_nm2.shape
+    assert result.diagnostics['uncorrected_rms_nm'][0] > 0
+    torch.testing.assert_close(
+        result.uncorrected_opd_psd,
+        result.opd_psd_for('uncorrected'),
+    )
+    assert result.atmosphere_model(
+        psd_type='uncorrected', symmetrize=True, seed=78
+    ).grid is grid
     variance=density[0].sum()/D**2
     model=result.atmosphere_model(symmetrize=True,seed=78)
     assert model.grid is grid
     screens=model.sample_opd_many(64)
     assert abs(float(screens.square().mean()/variance)-1) < .04
+
+
+def test_tiptop_result_rejects_unknown_psd_type():
+    from fiatlux.optics.tiptop import TiptopPSDResult
+
+    result = object.__new__(TiptopPSDResult)
+    result.power_nm2 = torch.ones(1, 2, 2)
+    result.uncorrected_power_nm2 = torch.full((1, 2, 2), 2.0)
+    assert result.power('residual')[0, 0, 0] == 1
+    assert result.power('uncorrected')[0, 0, 0] == 2
+    with pytest.raises(ValueError, match='psd_type'):
+        result.power('open-loop')
 
 
 def test_extraction_never_calls_interpolation(monkeypatch):
