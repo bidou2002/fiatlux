@@ -74,6 +74,7 @@ from .optics.elements.deformable_mirror import (
     DeformableMirror,
     ActuatorGrid,
     GaussianZonalBasis,
+    PupilOrthogonalizedBasis,
     FourierBasis,
     SquareZonalBasis,
     SquarePTTZonalBasis,
@@ -161,6 +162,7 @@ __all__ = [
     # Elements
     "OpticalElement",
     "DeformableMirror",
+    "PupilOrthogonalizedBasis",
     "ActuatorGrid",
     "GaussianZonalBasis",
     "FourierBasis",

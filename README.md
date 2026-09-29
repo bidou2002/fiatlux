@@ -126,7 +126,10 @@ Fiatlux includes a deformable-mirror model with several control bases, including
 - Fourier modes
 - Zernike modes
 
-This makes it possible to simulate both modal and actuator-based wavefront correction.
+Any of these bases can be wrapped in `PupilOrthogonalizedBasis` to obtain modes
+with unit RMS that are mutually orthogonal under the intensity transmitted by a
+built pupil. This makes it possible to simulate both modal and actuator-based
+wavefront correction without assuming an unobscured circular aperture.
 
 ### Adaptive optics
 
