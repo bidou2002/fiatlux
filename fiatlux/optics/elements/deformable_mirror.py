@@ -54,6 +54,110 @@ class ControlBasis(ABC):
 
 
 @dataclass
+@register_type("PupilOrthogonalizedBasis")
+class PupilOrthogonalizedBasis(ControlBasis):
+    """Orthonormalize any control basis on an illuminated pupil.
+
+    The returned modes span the same space as the wrapped basis and satisfy
+    ``B.T @ W @ B = I``, where ``W`` is the normalized pupil intensity
+    ``abs(transmission)**2``.  Symmetric Loewdin orthogonalization is used so
+    that the result remains as close as possible to the original modes while
+    preserving their ordering.
+
+    The pupil must be built before the command matrix is requested.  Bases
+    that lose rank on the illuminated support are rejected explicitly because
+    they cannot produce the requested number of orthonormal control modes.
+    """
+
+    basis: ControlBasis
+    pupil: Mask
+    rcond: float | None = None
+
+    def __post_init__(self) -> None:
+        if not hasattr(self.basis, "pixel_grid"):
+            raise ValueError("The wrapped control basis must expose a pixel_grid.")
+        if self.basis.pixel_grid != self.pupil.grid:
+            raise ValueError("The control-basis and pupil grids must be identical.")
+        if self.rcond is not None and (
+            not math.isfinite(self.rcond) or not 0 <= self.rcond < 1
+        ):
+            raise ValueError("rcond must be finite in [0, 1), or None.")
+
+    @property
+    def pixel_grid(self) -> Grid:
+        return self.basis.pixel_grid
+
+    @pixel_grid.setter
+    def pixel_grid(self, value: Grid) -> None:
+        self.basis.pixel_grid = value
+
+    @property
+    def n_modes(self) -> int:
+        return self.basis.n_modes
+
+    def build_command_matrix(self) -> torch.Tensor:
+        command_matrix = self.basis.build_command_matrix()
+        expected_shape = (
+            self.pixel_grid.ny * self.pixel_grid.nx,
+            self.n_modes,
+        )
+        if tuple(command_matrix.shape) != expected_shape:
+            raise ValueError(
+                "The wrapped control basis returned a command matrix with "
+                f"shape {tuple(command_matrix.shape)}; expected {expected_shape}."
+            )
+        if not torch.isfinite(command_matrix).all():
+            raise ValueError("The wrapped control basis contains non-finite values.")
+
+        transmission = self.pupil.transmission
+        if not isinstance(transmission, torch.Tensor):
+            raise ValueError(
+                "The pupil must be built before constructing an orthogonalized basis."
+            )
+        if tuple(transmission.shape) != self.pixel_grid.shape:
+            raise ValueError(
+                "The pupil transmission must have spatial shape "
+                f"{self.pixel_grid.shape}; got {tuple(transmission.shape)}."
+            )
+        transmission = transmission.to(
+            device=command_matrix.device,
+            dtype=command_matrix.dtype,
+        )
+        if not torch.isfinite(transmission).all():
+            raise ValueError("The pupil transmission must contain only finite values.")
+
+        weights = transmission.abs().square().flatten()
+        weight_sum = weights.sum()
+        if not bool(weight_sum > 0):
+            raise ValueError("The pupil must contain non-zero transmitted intensity.")
+        weights = weights / weight_sum
+
+        gram = command_matrix.mT @ (weights[:, None] * command_matrix)
+        gram = 0.5 * (gram + gram.mT)
+        eigenvalues, eigenvectors = torch.linalg.eigh(gram)
+        largest = eigenvalues[-1]
+        default_rcond = torch.finfo(command_matrix.dtype).eps * self.n_modes
+        threshold = largest * (
+            default_rcond if self.rcond is None else self.rcond
+        )
+        retained = eigenvalues > threshold
+        rank = int(retained.sum().item())
+        if rank != self.n_modes:
+            raise ValueError(
+                "The control basis has rank "
+                f"{rank} on the illuminated pupil, but {self.n_modes} modes "
+                "were requested. Remove unsupported modes before orthogonalization."
+            )
+
+        inverse_sqrt = (
+            eigenvectors
+            @ torch.diag_embed(eigenvalues.rsqrt())
+            @ eigenvectors.mT
+        )
+        return command_matrix @ inverse_sqrt
+
+
+@dataclass
 @register_type("GaussianZonalBasis")
 class GaussianZonalBasis(ControlBasis):
     actuator_grid: ActuatorGrid
