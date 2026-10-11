@@ -144,6 +144,71 @@ The package contains tools for AO-oriented simulations, including:
 
 Fiatlux is therefore intended not only for image formation, but also for developing and testing wavefront-sensing and correction strategies.
 
+### Phase-SLM calibration boundary
+
+Fiatlux provides vendor-independent helpers that stop at the integer frame sent
+to an experiment-specific SLM wrapper.  It does not import a manufacturer SDK,
+write BMP files, acquire camera images, or control hardware timing.
+
+```python
+from fiatlux import (
+    AffineRegistration, SLMCalibration, SLMEncoder,
+    illumination_fractions, select_registration_pokes,
+)
+
+# Fit physical FIATLUX (x, y) coordinates to measured SLM/camera (u, v)
+# centroids from at least three non-collinear square pokes.
+registration, residuals = AffineRegistration.fit(
+    commanded_centres,
+    measured_centroids,
+    output_shape=(1080, 1920),
+)
+
+calibration = SLMCalibration(
+    wavelength=635e-9,
+    drive_levels=measured_drive_levels,
+    phase_radians=measured_phase_delays,
+)
+encoder = SLMEncoder(calibration, registration)
+
+# dm.opd and atmosphere_opd are both expressed in metres of optical path.
+frame = encoder.encode_opd(dm.opd + atmosphere_opd, dm.pixel_grid)
+
+# The only hardware-specific boundary. BMP serialization belongs to wrapper.
+wrapper.send_bmp(frame.cpu().numpy())
+```
+
+The affine fit supports unequal scales, rotation, translation, reflection, and
+shear, so a circular simulated pupil may be registered to an elliptical SLM
+projection. The continuous OPD map is resampled first; only then is it converted
+to phase, wrapped modulo 2-pi, and quantized through the calibration LUT.
+
+For registration, a dense `SquareZonalBasis` may be reused rather than creating
+special-case patterns. `illumination_fractions()` rejects squares crossing the
+pupil boundary, central obstruction, or spiders, while
+`select_registration_pokes()` selects a requested number of spatially separated
+modes. Command the selected modes one at a time (preferably push-pull), measure
+their windowed response centroids with `weighted_centroid()`, and pass the paired
+physical and measured coordinates to `AffineRegistration.fit()`.
+
+```python
+selected = select_registration_pokes(
+    dense_square_basis,
+    pupil.transmission,
+    count=9,
+    minimum_illumination=0.95,
+)
+
+for mode_index in selected.tolist():
+    commands = torch.zeros(dense_square_basis.n_modes, dtype=grid.dtype)
+    commands[mode_index] = poke_opd
+    registration_dm.commands = commands
+    wrapper.send_bmp(
+        encoder.encode_opd(registration_dm.opd, grid).cpu().numpy()
+    )
+    # Camera acquisition and +/- poke differencing remain bench-specific.
+```
+
 ### Intermediate-field inspection
 
 `SerialSystem.run()` returns a `SimulationResult`, making it possible to inspect the field after any element:

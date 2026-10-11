@@ -64,6 +64,15 @@ from .optics.fatmoss import (
     FatmossUnavailableError,
     FrozenFlowLayer,
 )
+from .hardware.slm import (
+    AffineRegistration,
+    SLMCalibration,
+    SLMEncoder,
+    illumination_fractions,
+    select_registration_pokes,
+    square_zonal_centers,
+    weighted_centroid,
+)
 
 # =========================
 # Optical elements
@@ -149,6 +158,13 @@ __all__ = [
     "FatmossAtmosphereModel",
     "FatmossUnavailableError",
     "FrozenFlowLayer",
+    "AffineRegistration",
+    "SLMCalibration",
+    "SLMEncoder",
+    "illumination_fractions",
+    "select_registration_pokes",
+    "square_zonal_centers",
+    "weighted_centroid",
     "estimate_translation",
     "spatial_periodogram",
     "spatial_structure_function",
