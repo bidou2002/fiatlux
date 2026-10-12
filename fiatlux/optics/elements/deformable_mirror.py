@@ -119,14 +119,14 @@ class PupilOrthogonalizedBasis(ControlBasis):
                 "The pupil transmission must have spatial shape "
                 f"{self.pixel_grid.shape}; got {tuple(transmission.shape)}."
             )
-        transmission = transmission.to(
-            device=command_matrix.device,
-            dtype=command_matrix.dtype,
-        )
+        if transmission.dtype == torch.bool:
+            transmission = transmission.to(dtype=command_matrix.dtype)
         if not torch.isfinite(transmission).all():
             raise ValueError("The pupil transmission must contain only finite values.")
 
-        weights = transmission.abs().square().flatten()
+        weights = transmission.abs().square().to(
+            device=command_matrix.device, dtype=command_matrix.dtype
+        ).flatten()
         weight_sum = weights.sum()
         if not bool(weight_sum > 0):
             raise ValueError("The pupil must contain non-zero transmitted intensity.")
@@ -445,12 +445,22 @@ class ZernikeBasis(ControlBasis):
         self,
     ) -> torch.Tensor:
 
+        rho, theta = self._polar_coordinates()
         modes = zernike_basis(
             nterms=self.n + 1,
             npix=self.pixel_grid.nx,
+            rho=rho,
+            theta=theta,
         ).to(device=self.pixel_grid.device, dtype=self.pixel_grid.dtype)
 
         return modes[1:, ...].flatten(1, -1).T
+
+    def _polar_coordinates(self):
+        grid = self.pixel_grid
+        axis = (torch.arange(grid.nx, device=grid.device, dtype=grid.dtype)
+                - (grid.nx - 1) / 2) / ((grid.nx - 1) / 2)
+        x, y = torch.meshgrid(axis, axis, indexing="ij")
+        return torch.hypot(x, y), torch.atan2(y, x)
 
     @property
     def n_modes(self) -> int:
