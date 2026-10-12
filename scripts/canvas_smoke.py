@@ -58,7 +58,7 @@ def main():
             upstream={key:engine.entries[key] for key in ('source','pupil','atmosphere')}
             page.locator('#dm-commands').fill('[4e-8,-1.5e-8,6e-8]')
             expect(page.locator('#state')).to_have_text('À jour',timeout=120000)
-            page.wait_for_function('published === revision && revision > 1')
+            page.wait_for_function('() => published === revision && revision > 1')
             changed=server.canvas_manager.sessions[session].result
             assert changed.computed==['dm','focus','detector']
             assert all(engine.entries[key] is value for key,value in upstream.items())
@@ -71,11 +71,11 @@ def main():
             assert page.locator('[data-view="view-opd"]').get_attribute('data-revision')
             page.screenshot(path=str(output/'03-invalid.png'),full_page=True)
             page.locator('#dm-commands').fill('[4e-8,-1.5e-8,6e-8]')
-            page.wait_for_function('published === revision && state === "current"',timeout=120000)
+            page.wait_for_function('() => published === revision && state === "current"',timeout=120000)
             # Explicit stochastic refresh; display had not resampled anything.
             page.locator('[data-node="atmosphere"] .node-head').click()
             page.locator('#new-realization').click()
-            page.wait_for_function('published === revision && state === "current"',timeout=120000)
+            page.wait_for_function('() => published === revision && state === "current"',timeout=120000)
             changed=server.canvas_manager.sessions[session].result
             assert not __import__('torch').equal(changed.snapshots['atmosphere'].opd,screen)
             # Real palette drag/drop, then actual typed port connections.
