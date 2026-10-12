@@ -71,7 +71,7 @@ def zernike(
         the angle in radians.
     outside : float
         Value for pixels outside the circular aperture (rho > 1).
-        Default is `torch.nan`, but you may also find it useful for this to
+        Default is 0, but you may also find it useful for this to
         be 0.0 sometimes.
     noll_normalize : bool
         As defined in Noll et al. JOSA 1976, the Zernike definition is
@@ -81,7 +81,7 @@ def zernike(
 
     Returns
     -------
-    zern : 2D numpy array
+    zern : torch.Tensor
         Z(m,n) evaluated at each (rho, theta)
     """
     if not n >= abs(m):
@@ -213,7 +213,7 @@ def zernike1(j, **kwargs):
 
     Returns
     -------
-    zern : 2D numpy array
+    zern : torch.Tensor
         Z_j evaluated at each (rho, theta)
     """
     n, m = noll_indices(j)

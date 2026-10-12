@@ -414,11 +414,12 @@ class ZernikeBasis(ControlBasis):
         self,
     ) -> torch.Tensor:
 
+        rho, theta = self._polar_coordinates()
         modes = zernike_basis(
             nterms=self.n + 1,
             npix=self.pixel_grid.nx,
-            rho=self._polar_coordinates()[0],
-            theta=self._polar_coordinates()[1],
+            rho=rho,
+            theta=theta,
         ).to(device=self.pixel_grid.device, dtype=self.pixel_grid.dtype)
 
         return modes[1:, ...].flatten(1, -1).T
