@@ -44,7 +44,7 @@ def test_application_matches_independently_constructed_example(name):
     torch.testing.assert_close(actual.prepared.detector.image_buffer, detector.image_buffer, rtol=1e-12, atol=1e-12)
     assert len(actual.metadata()['steps']) == len(config['blocks'])
     image = actual.image(len(config['blocks'])-1)
-    torch.testing.assert_close(torch.tensor(image['values'], dtype=torch.float64), detector.image_buffer.sum(-3))
+    torch.testing.assert_close(torch.tensor(image['values'], dtype=torch.float64), detector.image_buffer)
 
 
 def test_spectral_views_follow_core_flux_and_phase_conventions():
@@ -135,3 +135,15 @@ def test_failed_run_keeps_configuration_and_reports_error():
         assert config == original
     finally:
         manager.close()
+
+
+
+def test_detector_view_is_integrated_acquisition_not_a_spectral_field():
+    config = examples()['01_circular']
+    config['spectrum'].update(samples=3, delta_wavelength=.1e-6)
+    actual = execute(config)
+    image = actual.image(3)
+    torch.testing.assert_close(torch.tensor(image['values'], dtype=torch.float64),
+                               actual.prepared.detector.image_buffer)
+    with pytest.raises(ValueError, match='intègre les canaux'):
+        actual.image(3, channel='0')

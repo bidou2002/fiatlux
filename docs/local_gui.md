@@ -51,8 +51,10 @@ Only the most recent successful/active run is available for stage inspection.
 Select a stage and a wavelength to inspect spectral intensity or phase. The
 polychromatic intensity is `Field.intensity().sum(-3)`: channel flux is already
 encoded in `PlaneWave` amplitude and must not be multiplied twice. There is no
-polychromatic phase. Detector views display acquired electrons/pixel or ADU/pixel,
-not field intensity. Masks and the DM expose OPD where the engine provides it.
+polychromatic phase. Detector views display spectrally integrated acquired electrons/pixel or
+ADU/pixel, not a wavelength-resolved field: the Detector itself sums the
+spectral channels before readout. Channel selection remains available at
+preceding optical stages. Masks and the DM expose OPD where the engine provides it.
 The visualization boundary converts detached CPU tensors to NumPy/JSON;
 construction and propagation stay in PyTorch.
 

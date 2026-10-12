@@ -33,6 +33,7 @@ def main():
                 page.locator('#run').click()
                 expect(page.locator('#result-state')).to_have_text('À jour', timeout=120000)
                 expect(page.locator('#image')).to_be_visible()
+                expect(page.locator('#image')).to_have_attribute('data-run', server.manager.run_id)
                 expect(page.locator('#message.error')).to_have_count(0)
                 assert page.locator('#stage option').count() == len(config['blocks'])
                 assert page.locator('#range').inner_text() != '—'

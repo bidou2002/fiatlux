@@ -131,8 +131,9 @@ class RunResult:
         if descriptor['detector']:
             if quantity != 'intensity':
                 raise ConfigurationError('Le détecteur fournit uniquement une intensité mesurée')
-            spectral = self.prepared.detector.image_buffer
-            data = spectral.sum(-3) if channel == 'sum' else spectral[int(channel)]
+            if channel != 'sum':
+                raise ConfigurationError('Le détecteur intègre les canaux spectraux ; sélectionner Σ Iλ')
+            data = self.prepared.detector.image_buffer
             unit = 'ADU/pixel' if self.prepared.detector.digitize else 'e⁻/pixel'
         elif quantity == 'opd':
             if not descriptor['opd']:
