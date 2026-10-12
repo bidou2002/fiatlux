@@ -25,3 +25,5 @@ consistency.
 14. `13_tiptop_residual_psds.ipynb` — FIATLUX-owned Fourier sampling, exact-grid
     HARMONI SCAO PSDs, component images and Monte-Carlo variance validation.
     Requires the optional `tiptop` extra; runs in a dedicated CI job.
+15. `14_pupil_orthogonal_control_basis.ipynb` — Zernike Gram matrices on
+    circular and ELT pupils, plus pupil-weighted ELT reorthogonalization.
