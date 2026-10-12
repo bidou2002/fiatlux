@@ -26,14 +26,17 @@ class Detector(RandomGeneratorMixin):
         generator: torch.Generator | None = None,
         name: str = "",
     ):
-        if exposure_time < 0:
-            raise ValueError("exposure_time must be non-negative.")
-        if not 0 <= quantum_efficiency <= 1:
-            raise ValueError("quantum_efficiency must be between 0 and 1.")
-        if readout_noise_variance < 0:
-            raise ValueError("readout_noise_variance must be non-negative.")
-        if dark_current < 0:
-            raise ValueError("dark_current must be non-negative.")
+        for parameter, value in (("exposure_time", exposure_time),
+                                 ("dark_current", dark_current),
+                                 ("readout_noise_variance", readout_noise_variance)):
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"{parameter} must be finite and non-negative.")
+        if not math.isfinite(quantum_efficiency) or not 0 <= quantum_efficiency <= 1:
+            raise ValueError("quantum_efficiency must be finite and between 0 and 1.")
+        if not math.isfinite(sensitivity) or sensitivity <= 0:
+            raise ValueError("sensitivity must be finite and positive (ADU/electron).")
+        if not isinstance(offset, int) or isinstance(offset, bool):
+            raise ValueError("offset must be a finite integer baseline in ADU.")
         self.grid = grid
         self.exposure_time = exposure_time
         self.quantum_efficiency = quantum_efficiency
@@ -158,7 +161,9 @@ class Detector(RandomGeneratorMixin):
     def electrons_to_adus(self, electrons: torch.Tensor) -> torch.Tensor:
         """Digitize electrons into integer ADUs in the configured ADC range.
 
-        Gain and offset are applied before values are clipped to
+        ``sensitivity`` is gain in ADU/electron; ``offset`` is an integer ADU
+        baseline (negative baselines are allowed). Gain and offset are applied
+        before values are clipped to
         ``[0, 2**bitdepth - 1]``. ``int64`` is used so a 16-bit ADC can safely
         represent its full range, including 65535.
         """
@@ -278,3 +283,4 @@ class ExposureAccumulator:
         self._finished = True
         self._total = None
         return result
+
