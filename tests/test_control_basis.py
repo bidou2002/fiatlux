@@ -51,7 +51,7 @@ def make_bases():
         (GaussianZonalBasis(actuator_grid, pixel_grid, 1.0), 6),
         (SquareZonalBasis(actuator_grid, pixel_grid, 1.0), 6),
         (SquarePTTZonalBasis(actuator_grid, pixel_grid, 1.0), 18),
-        (FourierBasis(pixel_grid, torch.arange(3), DummyPupil(pixel_grid)), 9),
+        (FourierBasis(pixel_grid, torch.tensor([-1., 0., 1.]), DummyPupil(pixel_grid)), 9),
         (ZernikeBasis(pixel_grid, n=7), 7),
     ]
 
