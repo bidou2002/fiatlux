@@ -1,79 +1,1380 @@
-'use strict';
-const $ = id => document.getElementById(id);
-const clone = value => JSON.parse(JSON.stringify(value));
-const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
-let catalog, presets, portTypes, config, selected = null, selectedEdge = null, tab = 'node';
-let revision = 0, published = -1, result = null, state = 'idle', error = null, affected = [], pollTimer, debounceTimer;
-const session = crypto.randomUUID(), maps = new Map(), requests = new Map(), submitted = new Map(), viewErrors = new Map(), viewPending = new Set();
+"use strict";
+const $ = (id) => document.getElementById(id);
+const clone = (value) => JSON.parse(JSON.stringify(value));
+const el = (tag, text, className) => {
+  const node = document.createElement(tag);
+  if (text !== undefined) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+};
+let catalog,
+  presets,
+  portTypes,
+  config,
+  selected = null,
+  selectedEdge = null,
+  tab = "node";
+let revision = 0,
+  published = -1,
+  result = null,
+  state = "idle",
+  error = null,
+  affected = [],
+  pollTimer,
+  debounceTimer;
+const session = crypto.randomUUID(),
+  maps = new Map(),
+  requests = new Map(),
+  submitted = new Map(),
+  viewErrors = new Map(),
+  viewPending = new Set();
 let publishedConfig = null;
-let gesture = null, armed = null, expanded = null, restored = false;
-const semantic = c => JSON.stringify({precision:c.precision,spectrum:c.spectrum,grids:c.grids,
-  nodes:c.nodes.filter(n=>n.type!=='Visualization').map(n=>({id:n.id,type:n.type,params:n.params})).sort((a,b)=>a.id.localeCompare(b.id)),
-  connections:c.connections.filter(e=>c.nodes.find(n=>n.id===e.to.node)?.type!=='Visualization').sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)))});
-function message(text) { $('message').hidden = !text; $('message').textContent = text || ''; }
-async function api(path, body) { const response = await fetch(path,body === undefined ? {} : {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const data = await response.json(); if(!response.ok) throw new Error(data.error || 'Erreur du serveur'); return data; }
-function saveDraft() { try { localStorage.setItem('fiatlux-canvas-v2',JSON.stringify(config)); } catch (_) {} }
-function node(id) { return config.nodes.find(n=>n.id===id); }
-function observerInput(id) { return config.connections.find(e=>e.to.node===id); }
-function worldPoint(clientX,clientY) { const r=$('viewport').getBoundingClientRect(),v=config.layout.viewport; return {x:(clientX-r.left-v.x)/v.zoom,y:(clientY-r.top-v.y)/v.zoom}; }
-function transform() { const v=config.layout.viewport; $('world').style.transform=`translate(${v.x}px,${v.y}px) scale(${v.zoom})`; $('zoom').textContent=`${Math.round(v.zoom*100)} %`; }
-function fit() { if(!config)return; const poses=Object.values(config.layout.positions);const left=Math.min(...poses.map(p=>p.x)),top=Math.min(...poses.map(p=>p.y));const right=Math.max(...poses.map(p=>p.x+p.width)),bottom=Math.max(...poses.map(p=>p.y+p.height)); const z=Math.max(.2,Math.min(1.2,($('viewport').clientWidth-60)/(right-left),($('viewport').clientHeight-65)/(bottom-top)));config.layout.viewport={x:30-left*z,y:30-top*z,zoom:z};transform();saveDraft(); }
-function zoom(factor,clientX,clientY) { const r=$('viewport').getBoundingClientRect(),v=config.layout.viewport; const cx=clientX ?? r.left+r.width/2,cy=clientY ?? r.top+r.height/2,p=worldPoint(cx,cy);v.zoom=Math.max(.2,Math.min(2.5,v.zoom*factor));v.x=cx-r.left-p.x*v.zoom;v.y=cy-r.top-p.y*v.zoom;transform();saveDraft(); }
-function portList(n,direction) { let entries=Object.entries(portTypes[n.type][direction]);if(n.type==='Visualization' && direction==='inputs'){const edge=observerInput(n.id);if(edge)entries=entries.filter(([key])=>key===edge.to.port);}return entries; }
-function portPoint(id,port,direction) { const p=config.layout.positions[id],entries=portList(node(id),direction),i=entries.findIndex(([key])=>key===port); return {x:p.x+(direction==='outputs'?p.width:0),y:p.y+88.5+Math.max(0,i)*22}; }
-function curve(a,b) { const dx=Math.max(60,Math.abs(b.x-a.x)*.45);return `M ${a.x} ${a.y} C ${a.x+dx} ${a.y}, ${b.x-dx} ${b.y}, ${b.x} ${b.y}`; }
-function drawWires() { const svg=$('wires');svg.replaceChildren();svg.setAttribute('viewBox','-20000 -20000 40000 40000');config.connections.forEach((edge,index)=>{const p=document.createElementNS('http://www.w3.org/2000/svg','path');p.setAttribute('d',curve(portPoint(edge.from.node,edge.from.port,'outputs'),portPoint(edge.to.node,edge.to.port,'inputs')));p.setAttribute('class',`wire ${edge.from.port}${selectedEdge===index?' selected':''}`);p.dataset.edge=index;p.onclick=e=>{e.stopPropagation();selectedEdge=index;selected=null;selectStyles();drawWires();renderInspector();};svg.append(p);});if(gesture?.kind==='wire'){const p=document.createElementNS('http://www.w3.org/2000/svg','path');p.setAttribute('d',curve(gesture.start,gesture.end));p.setAttribute('class','ghost-wire');svg.append(p);} }
-function selectStyles() { for(const card of $('nodes').children){card.classList.toggle('selected',card.dataset.node===selected);card.style.zIndex=card.dataset.node===selected?'3':'1';} }
-function select(id) { selected=id;selectedEdge=null;tab='node';selectStyles();drawWires();renderInspector(); }
-function statusFor(id) { const n=node(id);if(n.type==='Visualization'){if(viewErrors.has(id))return 'error';if(viewPending.has(id))return 'pending';const input=observerInput(id);return input?statusFor(input.from.node):'error';} if(error && (!result || affected.includes(id)))return 'error';if((state==='running'||state==='pending') && (!result || affected.includes(id)))return 'running';if(!result?.nodes.some(n=>n.id===id))return 'stale';if(published!==revision && affected.includes(id))return 'stale';return published===revision?'current':(affected.includes(id)?'stale':'current'); }
-const labels={current:'À jour',stale:'Périmé',running:'Calcul',pending:'En attente',error:'Erreur',idle:'En attente'};
-function renderStates() { $('state').className=`state ${state}`;$('state').textContent=labels[state]||state;$('revision').textContent=`Configuration r${revision} · résultat ${published<0?'—':`r${published}`}`;for(const card of $('nodes').children){const id=card.dataset.node,s=statusFor(id);const badge=card.querySelector('.node-state');badge.className=`node-state ${s}`;badge.textContent=labels[s];}if(result)$('stats').textContent=`${result.elapsed.toFixed(3)} s · ${result.computed.length} recalculés · ${result.reused.length} réutilisés`; }
-function summary(n) { const p=n.params;if(n.type==='PlaneWave')return `λ ${(Number(config.spectrum.central_wavelength)*1e9).toFixed(0)} nm · ${config.spectrum.samples} canal(aux)\nGrille ${p.grid}`;if(n.type==='DeformableMirror')return `${Array.isArray(p.commands)?p.commands.length:'?'} coefficients OPD · m\nGrille ${p.grid}`;if(n.type==='Kolmogorov')return `r₀ ${p.r0} m · graine ${p.seed}\nRéalisation ${p.realization} · ${p.grid}`;if(n.type.endsWith('Propagator'))return `${p.propagation}\n${p.propagation==='fresnel'?'z':'f'} ${p.propagation==='fresnel'?p.distance:p.focal_length} m`;if(n.type==='Detector')return `${p.exposure_time} s · ${p.digitize?'ADU':'électrons'}\nGrille ${p.grid}`;return `Grille ${p.grid}\n${p.radius!==undefined?`Rayon ${p.radius} m`:catalog[n.type].group}`; }
-function tooltip(n,event) { const gridName=n.params.grid||n.params.output_grid,grid=config.grids[gridName];const computed=result?.nodes.find(x=>x.id===n.id)?.grid;const g=computed||grid;const params=Object.entries(n.params).filter(([key])=>key!=='grid'&&key!=='output_grid'&&key!=='latent').map(([key,value])=>`${key}: ${Array.isArray(value)?JSON.stringify(value):value} ${catalog[n.type].fields[key]?.unit||''}`).join('\n');const text=`${config.layout.positions[n.id].label||catalog[n.type].label} · ${n.id}\n${labels[statusFor(n.id)]} · configuration r${revision}, résultat r${published}\n${g?`Grille ${g.nx} × ${g.ny} · dx ${g.dx} m · dy ${g.dy} m\n`:''}Spectre : ${(Number(config.spectrum.central_wavelength)*1e9).toFixed(2)} nm · ${config.spectrum.samples} λ\n${params}`;$('tooltip').textContent=text;$('tooltip').hidden=false;const rect=$('viewport').getBoundingClientRect();$('tooltip').style.left=`${Math.max(8,Math.min(rect.width-315,event.clientX-rect.left+12))}px`;$('tooltip').style.top=`${Math.max(8,Math.min(rect.height-240,event.clientY-rect.top+12))}px`; }
-function renderNodes() { const parent=$('nodes');parent.replaceChildren();for(const n of config.nodes){const pose=config.layout.positions[n.id];const card=el('article',undefined,`node${n.type==='Visualization'?' visual':''}`);card.dataset.node=n.id;card.style.left=`${pose.x}px`;card.style.top=`${pose.y}px`;card.style.width=`${pose.width}px`;card.style.height=`${pose.height}px`;card.tabIndex=0;card.setAttribute('aria-label',`${catalog[n.type].label} · ${n.id}`);const head=el('div',undefined,'node-head');const title=el('div');title.append(el('div',n.type,'node-kind'),el('h3',pose.label||catalog[n.type].label));head.append(title,el('span',labels[statusFor(n.id)],`node-state ${statusFor(n.id)}`));head.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();select(n.id);gesture={kind:'node',id:n.id,start:worldPoint(e.clientX,e.clientY),x:pose.x,y:pose.y};};head.onpointerenter=e=>tooltip(n,e);head.onpointerleave=()=>{$('tooltip').hidden=true;};card.onpointerdown=e=>{e.stopPropagation();if(!e.target.closest('button,select,input,textarea'))select(n.id);};card.onkeydown=e=>{if(e.key==='Enter'){select(n.id);e.preventDefault();}};card.append(head);
-  if(n.type==='Visualization') buildVisual(card,n);else{const s=el('div',summary(n),'node-summary');s.style.whiteSpace='pre-line';card.append(s);}const portBox=el('div',undefined,'ports');for(const [direction,cls]of [['inputs','input'],['outputs','output']])portList(n,direction).forEach(([key,type],i)=>{const button=el('button',undefined,`port ${cls} ${key==='in'?'field':key}`);button.style.top=`${i*22}px`;button.dataset.node=n.id;button.dataset.port=key;button.dataset.direction=direction;button.setAttribute('aria-label',`${n.id} ${cls} ${key} ${type}`);button.title=`${type} · ${key}`;button.onpointerdown=e=>{e.stopPropagation();if(direction==='outputs'){armed={node:n.id,port:key};gesture={kind:'wire',from:armed,start:portPoint(n.id,key,'outputs'),end:worldPoint(e.clientX,e.clientY)};button.classList.add('armed');}else if(armed){connect(armed,{node:n.id,port:key});armed=null;}};portBox.append(button);if(n.type!=='Visualization'){const label=el('span',key==='in'?'Field':type,`port-label ${cls}`);label.style.top=`${i*22+2}px`;portBox.append(label);}});card.append(portBox);parent.append(card);}selectStyles();drawWires();transform();renderStates();for(const n of config.nodes)if(n.type==='Visualization'&&maps.has(n.id))drawVisual(n.id); }
-function buildVisual(card,n) { const controls=el('div',undefined,'visual-controls');const quantity=el('select');quantity.setAttribute('aria-label',`Grandeur ${n.id}`);const input=observerInput(n.id),port=input?.from.port;const choices=port==='opd'?['opd']:port==='counts'?['intensity']:['intensity','phase'];for(const value of choices){const option=el('option',{intensity:'Intensité',phase:'Phase',opd:'OPD'}[value]);option.value=value;quantity.append(option);}quantity.value=n.params.quantity;quantity.onchange=()=>{n.params.quantity=quantity.value;if(quantity.value==='phase'&&n.params.channel==='sum')n.params.channel='0';if(quantity.value!=='intensity')n.params.scale='linear';displayChanged(n.id,true);};const channel=el('select');channel.setAttribute('aria-label',`Longueur d’onde ${n.id}`);const sum=el('option',port==='opd'?'Carte OPD':'Σ Iλ');sum.value='sum';sum.disabled=n.params.quantity==='phase';channel.append(sum);const wavelengths=result?.wavelengths||Array.from({length:Number(config.spectrum.samples)||1},(_,i)=>Number(config.spectrum.central_wavelength)+(Number(config.spectrum.delta_wavelength)||0)*(i/Math.max(1,config.spectrum.samples-1)-.5));wavelengths.forEach((value,i)=>{const option=el('option',`${(value*1e9).toFixed(1)} nm`);option.value=String(i);channel.append(option);});channel.value=n.params.channel;channel.disabled=port==='counts'||(port==='opd'&&!result?.nodes.find(x=>x.id===input.from.node)?.opd_spectral);channel.onchange=()=>{n.params.channel=channel.value;displayChanged(n.id);};const expand=el('button','↗');expand.setAttribute('aria-label',`Agrandir ${n.id}`);expand.onclick=()=>{expanded=n.id;$('expanded-title').textContent=config.layout.positions[n.id].label||catalog[n.type].label;$('expanded').showModal();drawVisual(n.id);};controls.append(quantity,channel,expand);const map=el('div',undefined,'visual-map');const canvas=el('canvas');canvas.dataset.view=n.id;canvas.setAttribute('aria-label',`Carte ${n.id}`);map.append(canvas,el('span','Connectez une sortie pour observer','visual-empty'));const unit=el('div',undefined,'visual-unit');unit.append(el('span','—'),el('span','—'));card.append(controls,map,unit); }
-function renderPalette() { $('palette').replaceChildren();const filter=$('search').value.toLowerCase();let group='';for(const [kind,info]of Object.entries(catalog)){if(!`${kind} ${info.label}`.toLowerCase().includes(filter))continue;if(info.group!==group){group=info.group;$('palette').append(el('div',group,'palette-group'));}const button=el('button',info.label,'palette-item');button.draggable=true;button.dataset.kind=kind;button.append(el('span','⋮'));button.ondragstart=e=>{e.dataTransfer.setData('application/x-fiatlux-component',kind);e.dataTransfer.effectAllowed='copy';};button.onclick=()=>{const rect=$('viewport').getBoundingClientRect();addNode(kind,worldPoint(rect.left+rect.width/2,rect.top+rect.height/2));};$('palette').append(button);} }
-function addNode(kind,point) { const id=`${kind.toLowerCase()}-${crypto.randomUUID().slice(0,8)}`;config.nodes.push({id,type:kind,params:Object.fromEntries(Object.entries(catalog[kind].fields).map(([key,value])=>[key,clone(value.default)]))});config.layout.positions[id]={x:point.x,y:point.y,width:kind==='Visualization'?280:210,height:kind==='Visualization'?290:150,label:''};selected=id;renderNodes();renderInspector();saveDraft();if(kind!=='Visualization')scienceChanged();else message('Visualisation ajoutée : connectez un port Field, OPD ou Counts.');return id; }
-async function connect(from,to) { const original=JSON.stringify(config), candidate=clone(config),target=candidate.nodes.find(n=>n.id===to.node);if(target?.type==='Visualization'){if(from.port==='opd'){target.params.quantity='opd';target.params.channel='sum';target.params.scale='linear';}else if(from.port==='counts'){target.params.quantity='intensity';target.params.channel='sum';}else if(target.params.quantity==='opd')target.params.quantity='intensity';}candidate.connections.push({from:clone(from),to:clone(to)});try{await api('/api/canvas/connect',candidate);if(JSON.stringify(config)!==original){message('Configuration modifiée pendant la validation : reconnectez les ports.');return;}const before=semantic(config);config=candidate;selectedEdge=null;message('');renderNodes();renderInspector();saveDraft();if(semantic(config)!==before)scienceChanged();else refreshViews();}catch(e){message(e.message);} }
-function removeSelection() { const before=semantic(config);if(selectedEdge!==null){config.connections.splice(selectedEdge,1);selectedEdge=null;}else if(selected){config.nodes=config.nodes.filter(n=>n.id!==selected);config.connections=config.connections.filter(e=>e.from.node!==selected&&e.to.node!==selected);delete config.layout.positions[selected];maps.delete(selected);selected=null;}else return;renderNodes();renderInspector();saveDraft();if(semantic(config)!==before)scienceChanged(); }
+let gesture = null,
+  armed = null,
+  expanded = null,
+  restored = false;
+const semantic = (c) =>
+  JSON.stringify({
+    precision: c.precision,
+    spectrum: c.spectrum,
+    grids: c.grids,
+    nodes: c.nodes
+      .filter((n) => n.type !== "Visualization")
+      .map((n) => ({ id: n.id, type: n.type, params: n.params }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+    connections: c.connections
+      .filter(
+        (e) =>
+          c.nodes.find((n) => n.id === e.to.node)?.type !== "Visualization",
+      )
+      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+  });
+function message(text) {
+  $("message").hidden = !text;
+  $("message").textContent = text || "";
+}
+async function api(path, body) {
+  const response = await fetch(
+    path,
+    body === undefined
+      ? {}
+      : {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+  );
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Erreur du serveur");
+  return data;
+}
+function saveDraft() {
+  try {
+    localStorage.setItem("fiatlux-canvas-v2", JSON.stringify(config));
+  } catch (_) {}
+}
+function node(id) {
+  return config.nodes.find((n) => n.id === id);
+}
+function observerInput(id) {
+  return config.connections.find((e) => e.to.node === id);
+}
+function worldPoint(clientX, clientY) {
+  const r = $("viewport").getBoundingClientRect(),
+    v = config.layout.viewport;
+  return {
+    x: (clientX - r.left - v.x) / v.zoom,
+    y: (clientY - r.top - v.y) / v.zoom,
+  };
+}
+function transform() {
+  const v = config.layout.viewport;
+  $("world").style.transform = `translate(${v.x}px,${v.y}px) scale(${v.zoom})`;
+  $("zoom").textContent = `${Math.round(v.zoom * 100)} %`;
+}
+function fit() {
+  if (!config) return;
+  const poses = Object.values(config.layout.positions);
+  const left = Math.min(...poses.map((p) => p.x)),
+    top = Math.min(...poses.map((p) => p.y));
+  const right = Math.max(...poses.map((p) => p.x + p.width)),
+    bottom = Math.max(...poses.map((p) => p.y + p.height));
+  const z = Math.max(
+    0.2,
+    Math.min(
+      1.2,
+      ($("viewport").clientWidth - 60) / (right - left),
+      ($("viewport").clientHeight - 65) / (bottom - top),
+    ),
+  );
+  config.layout.viewport = { x: 30 - left * z, y: 30 - top * z, zoom: z };
+  transform();
+  saveDraft();
+}
+function zoom(factor, clientX, clientY) {
+  const r = $("viewport").getBoundingClientRect(),
+    v = config.layout.viewport;
+  const cx = clientX ?? r.left + r.width / 2,
+    cy = clientY ?? r.top + r.height / 2,
+    p = worldPoint(cx, cy);
+  v.zoom = Math.max(0.2, Math.min(2.5, v.zoom * factor));
+  v.x = cx - r.left - p.x * v.zoom;
+  v.y = cy - r.top - p.y * v.zoom;
+  transform();
+  saveDraft();
+}
+function portList(n, direction) {
+  let entries = Object.entries(portTypes[n.type][direction]);
+  if (n.type === "Visualization" && direction === "inputs") {
+    const edge = observerInput(n.id);
+    if (edge) entries = entries.filter(([key]) => key === edge.to.port);
+  }
+  return entries;
+}
+function portPoint(id, port, direction) {
+  const p = config.layout.positions[id],
+    entries = portList(node(id), direction),
+    i = entries.findIndex(([key]) => key === port);
+  return {
+    x: p.x + (direction === "outputs" ? p.width : 0),
+    y: p.y + 88.5 + Math.max(0, i) * 22,
+  };
+}
+function curve(a, b) {
+  const dx = Math.max(60, Math.abs(b.x - a.x) * 0.45);
+  return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
+}
+function drawWires() {
+  const svg = $("wires");
+  svg.replaceChildren();
+  svg.setAttribute("viewBox", "-20000 -20000 40000 40000");
+  config.connections.forEach((edge, index) => {
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute(
+      "d",
+      curve(
+        portPoint(edge.from.node, edge.from.port, "outputs"),
+        portPoint(edge.to.node, edge.to.port, "inputs"),
+      ),
+    );
+    p.setAttribute(
+      "class",
+      `wire ${edge.from.port}${selectedEdge === index ? " selected" : ""}`,
+    );
+    p.dataset.edge = index;
+    p.onclick = (e) => {
+      e.stopPropagation();
+      selectedEdge = index;
+      selected = null;
+      selectStyles();
+      drawWires();
+      renderInspector();
+    };
+    svg.append(p);
+  });
+  if (gesture?.kind === "wire") {
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", curve(gesture.start, gesture.end));
+    p.setAttribute("class", "ghost-wire");
+    svg.append(p);
+  }
+}
+function selectStyles() {
+  for (const card of $("nodes").children) {
+    card.classList.toggle("selected", card.dataset.node === selected);
+    card.style.zIndex = card.dataset.node === selected ? "3" : "1";
+  }
+}
+function select(id) {
+  selected = id;
+  selectedEdge = null;
+  tab = "node";
+  selectStyles();
+  drawWires();
+  renderInspector();
+}
+function statusFor(id) {
+  const n = node(id);
+  if (n.type === "Visualization") {
+    if (viewErrors.has(id)) return "error";
+    if (viewPending.has(id)) return "pending";
+    const input = observerInput(id);
+    return input ? statusFor(input.from.node) : "error";
+  }
+  if (error && (!result || affected.includes(id))) return "error";
+  if (
+    (state === "running" || state === "pending") &&
+    (!result || affected.includes(id))
+  )
+    return "running";
+  if (!result?.nodes.some((n) => n.id === id)) return "stale";
+  if (published !== revision && affected.includes(id)) return "stale";
+  return published === revision
+    ? "current"
+    : affected.includes(id)
+      ? "stale"
+      : "current";
+}
+const labels = {
+  current: "À jour",
+  stale: "Périmé",
+  running: "Calcul",
+  pending: "En attente",
+  error: "Erreur",
+  idle: "En attente",
+};
+function renderStates() {
+  $("state").className = `state ${state}`;
+  $("state").textContent = labels[state] || state;
+  $("revision").textContent =
+    `Configuration r${revision} · résultat ${published < 0 ? "—" : `r${published}`}`;
+  for (const card of $("nodes").children) {
+    const id = card.dataset.node,
+      s = statusFor(id);
+    const badge = card.querySelector(".node-state");
+    badge.className = `node-state ${s}`;
+    badge.textContent = labels[s];
+  }
+  if (result)
+    $("stats").textContent =
+      `${result.elapsed.toFixed(3)} s · ${result.computed.length} recalculés · ${result.reused.length} réutilisés`;
+}
+function summary(n) {
+  const p = n.params;
+  if (n.type === "PlaneWave")
+    return `λ ${(Number(config.spectrum.central_wavelength) * 1e9).toFixed(0)} nm · ${config.spectrum.samples} canal(aux)\nGrille ${p.grid}`;
+  if (n.type === "DeformableMirror")
+    return `${Array.isArray(p.commands) ? p.commands.length : "?"} coefficients OPD · m\nGrille ${p.grid}`;
+  if (n.type === "Kolmogorov")
+    return `r₀ ${p.r0} m · graine ${p.seed}\nRéalisation ${p.realization} · ${p.grid}`;
+  if (n.type.endsWith("Propagator"))
+    return `${p.propagation}\n${p.propagation === "fresnel" ? "z" : "f"} ${p.propagation === "fresnel" ? p.distance : p.focal_length} m`;
+  if (n.type === "Detector")
+    return `${p.exposure_time} s · ${p.digitize ? "ADU" : "électrons"}\nGrille ${p.grid}`;
+  return `Grille ${p.grid}\n${p.radius !== undefined ? `Rayon ${p.radius} m` : catalog[n.type].group}`;
+}
+function tooltip(n, event) {
+  const gridName = n.params.grid || n.params.output_grid,
+    grid = config.grids[gridName];
+  const computed = result?.nodes.find((x) => x.id === n.id)?.grid;
+  const g = computed || grid;
+  const params = Object.entries(n.params)
+    .filter(
+      ([key]) => key !== "grid" && key !== "output_grid" && key !== "latent",
+    )
+    .map(
+      ([key, value]) =>
+        `${key}: ${Array.isArray(value) ? JSON.stringify(value) : value} ${catalog[n.type].fields[key]?.unit || ""}`,
+    )
+    .join("\n");
+  const text = `${config.layout.positions[n.id].label || catalog[n.type].label} · ${n.id}\n${labels[statusFor(n.id)]} · configuration r${revision}, résultat r${published}\n${g ? `Grille ${g.nx} × ${g.ny} · dx ${g.dx} m · dy ${g.dy} m\n` : ""}Spectre : ${(Number(config.spectrum.central_wavelength) * 1e9).toFixed(2)} nm · ${config.spectrum.samples} λ\n${params}`;
+  $("tooltip").textContent = text;
+  $("tooltip").hidden = false;
+  const rect = $("viewport").getBoundingClientRect();
+  $("tooltip").style.left =
+    `${Math.max(8, Math.min(rect.width - 315, event.clientX - rect.left + 12))}px`;
+  $("tooltip").style.top =
+    `${Math.max(8, Math.min(rect.height - 240, event.clientY - rect.top + 12))}px`;
+}
+function renderNodes() {
+  const parent = $("nodes");
+  parent.replaceChildren();
+  for (const n of config.nodes) {
+    const pose = config.layout.positions[n.id];
+    const card = el(
+      "article",
+      undefined,
+      `node${n.type === "Visualization" ? " visual" : ""}`,
+    );
+    card.dataset.node = n.id;
+    card.style.left = `${pose.x}px`;
+    card.style.top = `${pose.y}px`;
+    card.style.width = `${pose.width}px`;
+    card.style.height = `${pose.height}px`;
+    card.tabIndex = 0;
+    card.setAttribute("aria-label", `${catalog[n.type].label} · ${n.id}`);
+    const head = el("div", undefined, "node-head");
+    const title = el("div");
+    title.append(
+      el("div", n.type, "node-kind"),
+      el("h3", pose.label || catalog[n.type].label),
+    );
+    head.append(
+      title,
+      el("span", labels[statusFor(n.id)], `node-state ${statusFor(n.id)}`),
+    );
+    head.onpointerdown = (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      select(n.id);
+      gesture = {
+        kind: "node",
+        id: n.id,
+        start: worldPoint(e.clientX, e.clientY),
+        x: pose.x,
+        y: pose.y,
+      };
+    };
+    head.onpointerenter = (e) => tooltip(n, e);
+    head.onpointerleave = () => {
+      $("tooltip").hidden = true;
+    };
+    card.onpointerdown = (e) => {
+      e.stopPropagation();
+      if (!e.target.closest("button,select,input,textarea")) select(n.id);
+    };
+    card.onkeydown = (e) => {
+      if (e.key === "Enter") {
+        select(n.id);
+        e.preventDefault();
+      }
+    };
+    card.append(head);
+    if (n.type === "Visualization") buildVisual(card, n);
+    else {
+      const s = el("div", summary(n), "node-summary");
+      s.style.whiteSpace = "pre-line";
+      card.append(s);
+    }
+    const portBox = el("div", undefined, "ports");
+    for (const [direction, cls] of [
+      ["inputs", "input"],
+      ["outputs", "output"],
+    ])
+      portList(n, direction).forEach(([key, type], i) => {
+        const button = el(
+          "button",
+          undefined,
+          `port ${cls} ${key === "in" ? "field" : key}`,
+        );
+        button.style.top = `${i * 22}px`;
+        button.dataset.node = n.id;
+        button.dataset.port = key;
+        button.dataset.direction = direction;
+        button.setAttribute("aria-label", `${n.id} ${cls} ${key} ${type}`);
+        button.title = `${type} · ${key}`;
+        button.onpointerdown = (e) => {
+          e.stopPropagation();
+          if (direction === "outputs") {
+            armed = { node: n.id, port: key };
+            gesture = {
+              kind: "wire",
+              from: armed,
+              start: portPoint(n.id, key, "outputs"),
+              end: worldPoint(e.clientX, e.clientY),
+            };
+            button.classList.add("armed");
+          } else if (armed) {
+            connect(armed, { node: n.id, port: key });
+            armed = null;
+          }
+        };
+        portBox.append(button);
+        if (n.type !== "Visualization") {
+          const label = el(
+            "span",
+            key === "in" ? "Field" : type,
+            `port-label ${cls}`,
+          );
+          label.style.top = `${i * 22 + 2}px`;
+          portBox.append(label);
+        }
+      });
+    card.append(portBox);
+    parent.append(card);
+  }
+  selectStyles();
+  drawWires();
+  transform();
+  renderStates();
+  for (const n of config.nodes)
+    if (n.type === "Visualization" && maps.has(n.id)) drawVisual(n.id);
+}
+function buildVisual(card, n) {
+  const controls = el("div", undefined, "visual-controls");
+  const quantity = el("select");
+  quantity.setAttribute("aria-label", `Grandeur ${n.id}`);
+  const input = observerInput(n.id),
+    port = input?.from.port;
+  const choices =
+    port === "opd"
+      ? ["opd"]
+      : port === "counts"
+        ? ["intensity"]
+        : ["intensity", "phase"];
+  for (const value of choices) {
+    const option = el(
+      "option",
+      { intensity: "Intensité", phase: "Phase", opd: "OPD" }[value],
+    );
+    option.value = value;
+    quantity.append(option);
+  }
+  quantity.value = n.params.quantity;
+  quantity.onchange = () => {
+    n.params.quantity = quantity.value;
+    if (quantity.value === "phase" && n.params.channel === "sum")
+      n.params.channel = "0";
+    if (quantity.value !== "intensity") n.params.scale = "linear";
+    displayChanged(n.id, true);
+  };
+  const channel = el("select");
+  channel.setAttribute("aria-label", `Longueur d’onde ${n.id}`);
+  const sum = el("option", port === "opd" ? "Carte OPD" : "Σ Iλ");
+  sum.value = "sum";
+  sum.disabled = n.params.quantity === "phase";
+  channel.append(sum);
+  const wavelengths =
+    result?.wavelengths ||
+    Array.from(
+      { length: Number(config.spectrum.samples) || 1 },
+      (_, i) =>
+        Number(config.spectrum.central_wavelength) +
+        (Number(config.spectrum.delta_wavelength) || 0) *
+          (i / Math.max(1, config.spectrum.samples - 1) - 0.5),
+    );
+  wavelengths.forEach((value, i) => {
+    const option = el("option", `${(value * 1e9).toFixed(1)} nm`);
+    option.value = String(i);
+    channel.append(option);
+  });
+  channel.value = n.params.channel;
+  channel.disabled =
+    port === "counts" ||
+    (port === "opd" &&
+      !result?.nodes.find((x) => x.id === input.from.node)?.opd_spectral);
+  channel.onchange = () => {
+    n.params.channel = channel.value;
+    displayChanged(n.id);
+  };
+  const expand = el("button", "↗");
+  expand.setAttribute("aria-label", `Agrandir ${n.id}`);
+  expand.onclick = () => {
+    expanded = n.id;
+    $("expanded-title").textContent =
+      config.layout.positions[n.id].label || catalog[n.type].label;
+    $("expanded").showModal();
+    drawVisual(n.id);
+  };
+  controls.append(quantity, channel, expand);
+  const map = el("div", undefined, "visual-map");
+  const canvas = el("canvas");
+  canvas.dataset.view = n.id;
+  canvas.setAttribute("aria-label", `Carte ${n.id}`);
+  map.append(
+    canvas,
+    el("span", "Connectez une sortie pour observer", "visual-empty"),
+  );
+  const unit = el("div", undefined, "visual-unit");
+  unit.append(el("span", "—"), el("span", "—"));
+  card.append(controls, map, unit);
+}
+function renderPalette() {
+  $("palette").replaceChildren();
+  const filter = $("search").value.toLowerCase();
+  let group = "";
+  for (const [kind, info] of Object.entries(catalog)) {
+    if (!`${kind} ${info.label}`.toLowerCase().includes(filter)) continue;
+    if (info.group !== group) {
+      group = info.group;
+      $("palette").append(el("div", group, "palette-group"));
+    }
+    const button = el("button", info.label, "palette-item");
+    button.draggable = true;
+    button.dataset.kind = kind;
+    button.append(el("span", "⋮"));
+    button.ondragstart = (e) => {
+      e.dataTransfer.setData("application/x-fiatlux-component", kind);
+      e.dataTransfer.effectAllowed = "copy";
+    };
+    button.onclick = () => {
+      const rect = $("viewport").getBoundingClientRect();
+      addNode(
+        kind,
+        worldPoint(rect.left + rect.width / 2, rect.top + rect.height / 2),
+      );
+    };
+    $("palette").append(button);
+  }
+}
+function addNode(kind, point) {
+  const id = `${kind.toLowerCase()}-${crypto.randomUUID().slice(0, 8)}`;
+  config.nodes.push({
+    id,
+    type: kind,
+    params: Object.fromEntries(
+      Object.entries(catalog[kind].fields).map(([key, value]) => [
+        key,
+        clone(value.default),
+      ]),
+    ),
+  });
+  config.layout.positions[id] = {
+    x: point.x,
+    y: point.y,
+    width: kind === "Visualization" ? 280 : 210,
+    height: kind === "Visualization" ? 290 : 150,
+    label: "",
+  };
+  selected = id;
+  renderNodes();
+  renderInspector();
+  saveDraft();
+  if (kind !== "Visualization") scienceChanged();
+  else
+    message("Visualisation ajoutée : connectez un port Field, OPD ou Counts.");
+  return id;
+}
+async function connect(from, to) {
+  const original = JSON.stringify(config),
+    candidate = clone(config),
+    target = candidate.nodes.find((n) => n.id === to.node);
+  if (target?.type === "Visualization") {
+    if (from.port === "opd") {
+      target.params.quantity = "opd";
+      target.params.channel = "sum";
+      target.params.scale = "linear";
+    } else if (from.port === "counts") {
+      target.params.quantity = "intensity";
+      target.params.channel = "sum";
+    } else if (target.params.quantity === "opd")
+      target.params.quantity = "intensity";
+  }
+  candidate.connections.push({ from: clone(from), to: clone(to) });
+  try {
+    await api("/api/canvas/connect", candidate);
+    if (JSON.stringify(config) !== original) {
+      message(
+        "Configuration modifiée pendant la validation : reconnectez les ports.",
+      );
+      return;
+    }
+    const before = semantic(config);
+    config = candidate;
+    selectedEdge = null;
+    message("");
+    renderNodes();
+    renderInspector();
+    saveDraft();
+    if (semantic(config) !== before) scienceChanged();
+    else refreshViews();
+  } catch (e) {
+    message(e.message);
+  }
+}
+function removeSelection() {
+  const before = semantic(config);
+  if (selectedEdge !== null) {
+    config.connections.splice(selectedEdge, 1);
+    selectedEdge = null;
+  } else if (selected) {
+    config.nodes = config.nodes.filter((n) => n.id !== selected);
+    config.connections = config.connections.filter(
+      (e) => e.from.node !== selected && e.to.node !== selected,
+    );
+    delete config.layout.positions[selected];
+    maps.delete(selected);
+    selected = null;
+  } else return;
+  renderNodes();
+  renderInspector();
+  saveDraft();
+  if (semantic(config) !== before) scienceChanged();
+}
 function scientificKeys(c) {
-  const outgoing=new Map(c.connections.filter(e=>c.nodes.find(n=>n.id===e.to.node)?.type!=='Visualization').map(e=>[e.from.node,e.to.node]));
-  const keys=new Map(),prefix=[];
-  let current=c.nodes.find(n=>n.type==='PlaneWave')?.id;
-  while(current && !keys.has(current)) {
-    const n=c.nodes.find(n=>n.id===current);
-    if(!n)break;
-    const used=Object.entries(n.params).filter(([key])=>key==='grid'||key==='output_grid').map(([,value])=>value);
-    const local={type:n.type,params:n.params,precision:c.precision,grids:Object.fromEntries(used.map(name=>[name,c.grids[name]]))};
-    if(n.type==='PlaneWave')local.spectrum=c.spectrum;
-    prefix.push(local);keys.set(current,JSON.stringify(prefix));current=outgoing.get(current);
+  const outgoing = new Map(
+    c.connections
+      .filter(
+        (e) =>
+          c.nodes.find((n) => n.id === e.to.node)?.type !== "Visualization",
+      )
+      .map((e) => [e.from.node, e.to.node]),
+  );
+  const keys = new Map(),
+    prefix = [];
+  let current = c.nodes.find((n) => n.type === "PlaneWave")?.id;
+  while (current && !keys.has(current)) {
+    const n = c.nodes.find((n) => n.id === current);
+    if (!n) break;
+    const used = Object.entries(n.params)
+      .filter(([key]) => key === "grid" || key === "output_grid")
+      .map(([, value]) => value);
+    const local = {
+      type: n.type,
+      params: n.params,
+      precision: c.precision,
+      grids: Object.fromEntries(used.map((name) => [name, c.grids[name]])),
+    };
+    if (n.type === "PlaneWave") local.spectrum = c.spectrum;
+    prefix.push(local);
+    keys.set(current, JSON.stringify(prefix));
+    current = outgoing.get(current);
   }
   return keys;
 }
 function affectedNodes() {
-  const before=publishedConfig?scientificKeys(publishedConfig):new Map(),after=scientificKeys(config);
-  return config.nodes.filter(n=>n.type!=='Visualization'&&(!after.has(n.id)||after.get(n.id)!==before.get(n.id))).map(n=>n.id);
+  const before = publishedConfig ? scientificKeys(publishedConfig) : new Map(),
+    after = scientificKeys(config);
+  return config.nodes
+    .filter(
+      (n) =>
+        n.type !== "Visualization" &&
+        (!after.has(n.id) || after.get(n.id) !== before.get(n.id)),
+    )
+    .map((n) => n.id);
 }
-function scienceChanged() { revision++;state='pending';error=null;affected=affectedNodes();renderStates();clearTimeout(debounceTimer);clearTimeout(pollTimer);saveDraft();debounceTimer=setTimeout(submit,350); }
-async function submit() { const at=revision,snapshot=clone(config);submitted.set(at,snapshot);try{const data=await api('/api/canvas/submit',{session,revision:at,configuration:snapshot});if(at!==revision)return;if(data.error){state='error';error=data.error;message(error);renderStates();return;}poll();}catch(e){if(at!==revision)return;state='error';error=e.message;message(error);renderStates();} }
-async function poll() { const expected=revision;try{const data=await api(`/api/canvas/status?session=${session}`);if(expected!==revision||data.revision!==revision)return;state=data.state;affected=data.affected;error=data.error;message(error);if(data.published_revision===revision&&data.result){result=data.result;published=revision;publishedConfig=submitted.get(revision);submitted.clear();renderNodes();refreshViews();if(selected)renderInspector();}renderStates();if(state==='running'||state==='pending')pollTimer=setTimeout(poll,180);}catch(e){if(expected===revision){state='error';error=e.message;message(error);renderStates();}} }
-async function refreshView(id) { const n=node(id),edge=observerInput(id);if(!n||!edge||published<0)return;const version=published,generation=(requests.get(id)||0)+1;requests.set(id,generation);viewPending.add(id);renderStates();const p=n.params;const params=new URLSearchParams({session,revision:version,node:edge.from.node,port:edge.from.port,quantity:p.quantity,channel:p.channel,opd_unit:p.opd_unit,latent:JSON.stringify(p.latent)});try{const image=await api(`/api/canvas/image?${params}`);if(published!==version||requests.get(id)!==generation||!node(id))return;viewErrors.delete(id);maps.set(id,image);drawVisual(id);renderStates();}catch(e){if(requests.get(id)===generation){viewErrors.set(id,e.message);message(`Visualisation ${id} : ${e.message}`);renderStates();}}finally{if(requests.get(id)===generation){viewPending.delete(id);renderStates();}} }
-function refreshViews() { for(const n of config.nodes)if(n.type==='Visualization')refreshView(n.id); }
-async function displayChanged(id,rebuild=false) {
-  saveDraft();const settings=JSON.stringify(node(id)?.params);
-  try { await api('/api/canvas/connect',config);if(settings!==JSON.stringify(node(id)?.params))return;viewErrors.delete(id);if(rebuild)renderNodes();else drawVisual(id);refreshView(id);renderStates();if(selected===id)renderInspector();message(error); }
-  catch(failure) { viewErrors.set(id,failure.message);message(`Visualisation ${id} : ${failure.message}`);renderStates(); }
+function scienceChanged() {
+  revision++;
+  state = "pending";
+  error = null;
+  affected = affectedNodes();
+  renderStates();
+  clearTimeout(debounceTimer);
+  clearTimeout(pollTimer);
+  saveDraft();
+  debounceTimer = setTimeout(submit, 350);
 }
-function presentationChanged() { saveDraft();renderNodes(); }
-const palettes={green:[[18,30,26],[35,82,61],[99,139,62],[207,219,100],[255,242,185]],gray:[[10,10,10],[250,250,250]],magma:[[0,0,4],[80,18,123],[183,55,121],[252,137,97],[252,253,191]],diverging:[[45,78,148],[255,255,255],[195,48,42]]};
-function color(palette,t) { const values=palettes[palette]||palettes.green,pos=Math.max(0,Math.min(1,t))*(values.length-1),i=Math.min(values.length-2,Math.floor(pos)),fraction=pos-i;return values[i].map((v,k)=>Math.round(v+(values[i+1][k]-v)*fraction)); }
-function renderMap(canvas,image,p) { const rect=canvas.getBoundingClientRect(),ratio=devicePixelRatio;canvas.width=Math.max(1,Math.round(rect.width*ratio));canvas.height=Math.max(1,Math.round(rect.height*ratio));const ctx=canvas.getContext('2d');ctx.scale(ratio,ratio);const w=rect.width,h=rect.height;ctx.fillStyle='#f0f3e8';ctx.fillRect(0,0,w,h);let lo=p.minimum??image.minimum,hi=p.maximum??image.maximum;if(p.quantity!=='intensity'&&p.minimum===null&&p.maximum===null){hi=Math.max(Math.abs(lo),Math.abs(hi));lo=-hi;}const logarithmic=p.scale==='log'&&p.quantity==='intensity',floor=Math.max(hi*1e-12,Number.MIN_VALUE);const normalize=v=>logarithmic?(Math.log10(Math.max(v,floor))-Math.log10(Math.max(lo,floor)))/(Math.log10(Math.max(hi,floor))-Math.log10(Math.max(lo,floor))||1):(v-lo)/(hi-lo||1);const off=document.createElement('canvas');off.width=image.nx;off.height=image.ny;const oc=off.getContext('2d'),data=oc.createImageData(image.nx,image.ny);for(let y=0;y<image.ny;y++)for(let x=0;x<image.nx;x++){const offset=((image.ny-1-y)*image.nx+x)*4;data.data.set([...color(p.colormap,normalize(image.values[y][x])),255],offset);}oc.putImageData(data,0,0);const physical=image.nx*(image.x[1]-image.x[0])/(image.ny*(image.y[1]-image.y[0]));let pw=Math.max(1,w-77),ph=Math.max(1,h-42);if(pw/ph>physical)pw=ph*physical;else ph=pw/physical;const x0=35+(w-77-pw)/2,y0=8+(h-42-ph)/2;ctx.imageSmoothingEnabled=false;ctx.drawImage(off,x0,y0,pw,ph);ctx.strokeStyle='#bdc9b1';ctx.strokeRect(x0,y0,pw,ph);const gradient=ctx.createLinearGradient(0,y0+ph,0,y0);const colors=palettes[p.colormap];colors.forEach((c,i)=>gradient.addColorStop(i/(colors.length-1),`rgb(${c.join(',')})`));ctx.fillStyle=gradient;ctx.fillRect(x0+pw+8,y0,7,ph);ctx.fillStyle='#6b7861';ctx.font='8px monospace';ctx.textAlign='center';ctx.fillText('x (m)',x0+pw/2,y0+ph+25);const fmt=v=>v===0?'0':Number(v.toPrecision(2)).toString();ctx.fillText(fmt(image.x[0]),x0,y0+ph+13);ctx.fillText(fmt(image.x.at(-1)),x0+pw,y0+ph+13);ctx.save();ctx.translate(x0-24,y0+ph/2);ctx.rotate(-Math.PI/2);ctx.fillText('y (m)',0,0);ctx.restore();ctx.textAlign='left';ctx.font='7px monospace';ctx.fillText(hi.toExponential(1),x0+pw+18,y0+6);ctx.fillText((logarithmic?Math.max(lo,floor):lo).toExponential(1),x0+pw+18,y0+ph); }
-function drawVisual(id) { const image=maps.get(id),n=node(id),card=$('nodes').querySelector(`[data-node="${CSS.escape(id)}"]`);if(!image||!n||!card||viewErrors.has(id))return;card.querySelector('.visual-empty').hidden=true;const canvas=card.querySelector('canvas');canvas.dataset.revision=image.revision;const drawParams={...n.params,quantity:image.quantity,scale:image.quantity==='intensity'?n.params.scale:'linear'};renderMap(canvas,image,drawParams);const units=card.querySelector('.visual-unit');units.children[0].textContent=image.unit;units.children[1].textContent=`${image.minimum.toExponential(1)} → ${image.maximum.toExponential(1)}`;if(expanded===id&&$('expanded').open){$('expanded-title').textContent=`${{intensity:'Intensité',phase:'Phase',opd:'OPD'}[n.params.quantity]} · ${image.unit} — ${config.layout.positions[id].label||id} · r${image.revision}`;renderMap($('expanded-image'),image,drawParams);} }
-function control(parent,key,rule,object,scope,onchange) { const wrap=el('div',undefined,'control'),label=el('label',rule.label||key),id=`${scope}-${key}`;label.htmlFor=id;if(rule.unit)label.append(el('span',rule.unit));let input;const options={grid:Object.keys(config.grids),regime:['fraunhofer','fresnel'],quantity:['intensity','phase','opd'],colormap:Object.keys(palettes),scale:['linear','log'],opd_unit:['nm','m'],channel:['sum',...Array.from({length:result?.wavelengths.length||Number(config.spectrum.samples)||1},(_,i)=>String(i))]};if(options[rule.kind]){input=el('select');for(const value of options[rule.kind]){const option=el('option',value);option.value=value;input.append(option);}input.value=object[key];}else if(rule.kind==='array'||rule.kind==='latent'){input=el('textarea');input.value=typeof object[key]==='string'?object[key]:JSON.stringify(object[key]);input.spellcheck=false;}else{input=el('input');input.type=rule.kind==='bool'?'checkbox':rule.kind==='text'?'text':'number';if(input.type==='checkbox')input.checked=object[key];else{input.value=object[key]??'';if(input.type==='number')input.step=rule.kind==='integer'?'1':'any';}}input.id=id;const update=()=>{let value;try{if(input.type==='checkbox')value=input.checked;else if(options[rule.kind])value=input.value;else if(rule.kind==='array'||rule.kind==='latent')value=JSON.parse(input.value);else if(rule.kind==='text')value=input.value;else if(input.value===''&&rule.nullable)value=null;else{value=input.value===''?'':Number(input.value);if(!Number.isFinite(value))value=input.value;}object[key]=value;onchange(key);}catch(e){object[key]=input.value;message(`${scope}.${key} : ${e.message}`);onchange(key);}};input.addEventListener(input.tagName==='SELECT'||input.type==='checkbox'?'change':'input',update);wrap.append(label,input);parent.append(wrap);return input; }
-function renderInspector() { $('node-tab').classList.toggle('active',tab==='node');$('settings-tab').classList.toggle('active',tab==='settings');const parent=$('inspector');parent.replaceChildren();if(tab==='settings'){control(parent,'precision',{label:'Précision CPU',kind:'text'},config,'settings',scienceChanged);parent.append(el('div','SPECTRE','section-label'));for(const [key,label,unit]of [['central_wavelength','Longueur d’onde centrale','m'],['delta_wavelength','Largeur de bande','m'],['f0','Flux de référence f₀','photons/s'],['magnitude','Magnitude','mag'],['samples','Canaux spectraux','']])control(parent,key,{label,unit,kind:key==='samples'?'integer':'number'},config.spectrum,'spectrum',scienceChanged);for(const [name,grid]of Object.entries(config.grids)){parent.append(el('div',`GRILLE ${name}`,'section-label'));for(const key of ['nx','ny','dx','dy'])control(parent,key,{label:key,unit:key[0]==='n'?'pixels':'m',kind:key[0]==='n'?'integer':'number'},grid,name,scienceChanged);}return;}if(selectedEdge!==null){const edge=config.connections[selectedEdge];parent.append(el('h3','Connexion sélectionnée'),el('p',`${edge.from.node}.${edge.from.port} → ${edge.to.node}.${edge.to.port}`));const button=el('button','Supprimer cette connexion','danger');button.onclick=removeSelection;parent.append(button);return;}const n=node(selected);if(!n){parent.append(el('h3','Votre banc optique'),el('p','Sélectionnez une boîte pour éditer ses paramètres. Reliez un port de sortie à un port d’entrée par glissement ou par deux clics.','inspector-note'));return;}parent.append(el('div',n.id,'identifier'),el('h3',catalog[n.type].label));control(parent,'label',{label:'Nom affiché (présentation)',kind:'text'},config.layout.positions[n.id],n.id,()=>{saveDraft();const h=$('nodes').querySelector(`[data-node="${CSS.escape(n.id)}"] h3`);if(h)h.textContent=config.layout.positions[n.id].label||catalog[n.type].label;});for(const [key,rule]of Object.entries(catalog[n.type].fields)){if(n.type==='Kolmogorov'&&key==='realization')continue;if(n.type==='Visualization'&&key==='latent'){const input=observerInput(n.id),meta=result?.nodes.find(x=>x.id===input?.from.node);if(!meta?.dimensions.length){parent.append(el('p','Aucune dimension latente dans ce résultat.','mini-stats'));continue;}for(const dim of meta.dimensions){if(n.params.latent[dim.name]===undefined)n.params.latent[dim.name]=0;control(parent,dim.name,{label:`${dim.name} · ${dim.size} échantillons`,kind:'integer',unit:dim.unit||''},n.params.latent,`${n.id}-latent`,()=>displayChanged(n.id));}continue;}const handler=n.type==='Visualization'?()=>displayChanged(n.id):()=>{scienceChanged();const summaryNode=$('nodes').querySelector(`[data-node="${CSS.escape(n.id)}"] .node-summary`);if(summaryNode)summaryNode.textContent=summary(n);};control(parent,key,rule,n.params,n.id,handler);}if(n.type==='Kolmogorov'){const button=el('button','Nouvelle réalisation');button.id='new-realization';button.onclick=()=>{n.params.realization++;scienceChanged();renderNodes();renderInspector();};parent.append(button,el('p',`Réalisation ${n.params.realization} · seed effectif = (seed + 104729 × compteur) mod 2³¹. Changer r₀ ou la grille reconstruit la réalisation ; déplacer ou afficher ne la modifie jamais.`,'inspector-note'));}if(n.type==='DeformableMirror' && Array.isArray(n.params.commands) && Number(n.params.stroke)>0){n.params.commands.slice(0,12).forEach((value,i)=>{const wrap=el('div',undefined,'control'),label=el('label',`Noll ${i+2} · ${(value*1e9).toFixed(1)} nm`),slider=el('input');slider.type='range';slider.min=-n.params.stroke;slider.max=n.params.stroke;slider.step=n.params.stroke/200;slider.value=value;slider.id=`${n.id}-slider-${i}`;label.htmlFor=slider.id;slider.oninput=()=>{n.params.commands[i]=Number(slider.value);label.textContent=`Noll ${i+2} · ${(n.params.commands[i]*1e9).toFixed(1)} nm`;const commands=$(`${n.id}-commands`);if(commands)commands.value=JSON.stringify(n.params.commands);scienceChanged();};wrap.append(label,slider);parent.append(wrap);});}if(n.type==='DeformableMirror')parent.append(el('p','Coefficients en mètres OPD, Noll 2… sans piston. Grille carrée isotrope selon la base native actuelle. Aucun déplacement mécanique.','inspector-note'));if(n.type==='Visualization')parent.append(el('p','Observateur uniquement : colormap, limites, quantité, longueur d’onde et dimensions réutilisent le résultat. Les branchements ne modifient jamais la propagation.','inspector-note'));const deleteButton=el('button','Supprimer le bloc','danger');deleteButton.onclick=removeSelection;parent.append(deleteButton); }
-function loadConfig(next,initial=false) { const before=config?semantic(config):null;config=clone(next);selected=config.nodes.find(n=>n.type==='DeformableMirror')?.id||config.nodes[1]?.id;selectedEdge=null;armed=null;$('name').value=config.name;maps.forEach((_,id)=>{if(!node(id))maps.delete(id);});renderPalette();renderNodes();renderInspector();saveDraft();if(initial||semantic(config)!==before)scienceChanged();else refreshViews(); }
-$('viewport').onpointerdown=e=>{if(e.button!==0||e.target.closest('.node,.wire'))return;selected=null;selectedEdge=null;selectStyles();renderInspector();gesture={kind:'pan',clientX:e.clientX,clientY:e.clientY,x:config.layout.viewport.x,y:config.layout.viewport.y};};window.addEventListener('pointermove',e=>{if(!gesture||!config)return;$('tooltip').hidden=true;if(gesture.kind==='pan'){const v=config.layout.viewport;v.x=gesture.x+e.clientX-gesture.clientX;v.y=gesture.y+e.clientY-gesture.clientY;transform();}else if(gesture.kind==='node'){const p=worldPoint(e.clientX,e.clientY),pose=config.layout.positions[gesture.id];pose.x=gesture.x+p.x-gesture.start.x;pose.y=gesture.y+p.y-gesture.start.y;const card=$('nodes').querySelector(`[data-node="${CSS.escape(gesture.id)}"]`);card.style.left=`${pose.x}px`;card.style.top=`${pose.y}px`;drawWires();}else{gesture.end=worldPoint(e.clientX,e.clientY);drawWires();}});window.addEventListener('pointerup',e=>{const g=gesture;gesture=null;if(g?.kind==='wire'){const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('.port.input');if(target){connect(g.from,{node:target.dataset.node,port:target.dataset.port});armed=null;}drawWires();}saveDraft();});$('viewport').addEventListener('wheel',e=>{e.preventDefault();zoom(Math.exp(-e.deltaY*.001),e.clientX,e.clientY);},{passive:false});$('viewport').ondragover=e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';};$('viewport').ondrop=e=>{e.preventDefault();const kind=e.dataTransfer.getData('application/x-fiatlux-component');if(catalog[kind])addNode(kind,worldPoint(e.clientX,e.clientY));};window.addEventListener('keydown',e=>{if(e.target.closest('input,textarea,select'))return;if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();removeSelection();}if(e.key==='Escape'){armed=null;gesture=null;$('tooltip').hidden=true;drawWires();}});
-$('fit').onclick=fit;$('zoom-in').onclick=()=>zoom(1.2);$('zoom-out').onclick=()=>zoom(1/1.2);$('delete').onclick=removeSelection;$('search').oninput=renderPalette;$('node-tab').onclick=()=>{tab='node';renderInspector();};$('settings-tab').onclick=()=>{tab='settings';renderInspector();};$('name').oninput=()=>{config.name=$('name').value;saveDraft();};$('run').onclick=scienceChanged;$('close-expanded').onclick=()=>{$('expanded').close();expanded=null;};$('expanded').addEventListener('close',()=>{expanded=null;});$('open').onclick=()=>$('file').click();$('file').onchange=async()=>{const file=$('file').files[0];if(!file)return;try{if(file.size>1000000)throw new Error('Fichier supérieur à 1 Mo');const data=JSON.parse(await file.text());const checked=await api('/api/canvas/validate',data);loadConfig(checked.configuration);message('');}catch(e){message(e.message);}finally{$('file').value='';}};$('save').onclick=async()=>{try{await api('/api/canvas/validate',config);const url=URL.createObjectURL(new Blob([JSON.stringify(config,null,2)+'\n'],{type:'application/json'}));const anchor=el('a');anchor.href=url;anchor.download='fiatlux-canvas-v2.json';anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){message(e.message);}};
-new ResizeObserver(()=>{if(!config)return;for(const id of maps.keys())drawVisual(id);}).observe($('viewport'));
-(async()=>{try{const data=await api('/api/canvas/catalog');catalog=data.components;presets=data.examples;portTypes=data.ports;for(const [key,preset]of Object.entries(presets)){const option=el('option',preset.name);option.value=key;$('examples').append(option);}let initial=presets['04_canvas']||Object.values(presets)[0];const draft=localStorage.getItem('fiatlux-canvas-v2');if(draft){try{initial=(await api('/api/canvas/validate',JSON.parse(draft))).configuration;restored=true;}catch(_){message('Brouillon incompatible ; exemple initial chargé.');}}$('examples').value='04_canvas';loadConfig(initial,true);if(!restored)fit();$('examples').onchange=()=>{loadConfig(presets[$('examples').value]);fit();message('');};}catch(e){message(e.message);}})();
+async function submit() {
+  const at = revision,
+    snapshot = clone(config);
+  submitted.set(at, snapshot);
+  try {
+    const data = await api("/api/canvas/submit", {
+      session,
+      revision: at,
+      configuration: snapshot,
+    });
+    if (at !== revision) return;
+    if (data.error) {
+      state = "error";
+      error = data.error;
+      message(error);
+      renderStates();
+      return;
+    }
+    poll();
+  } catch (e) {
+    if (at !== revision) return;
+    state = "error";
+    error = e.message;
+    message(error);
+    renderStates();
+  }
+}
+async function poll() {
+  const expected = revision;
+  try {
+    const data = await api(`/api/canvas/status?session=${session}`);
+    if (expected !== revision || data.revision !== revision) return;
+    state = data.state;
+    affected = data.affected;
+    error = data.error;
+    message(error);
+    if (data.published_revision === revision && data.result) {
+      result = data.result;
+      published = revision;
+      publishedConfig = submitted.get(revision);
+      submitted.clear();
+      renderNodes();
+      refreshViews();
+      if (selected) renderInspector();
+    }
+    renderStates();
+    if (state === "running" || state === "pending")
+      pollTimer = setTimeout(poll, 180);
+  } catch (e) {
+    if (expected === revision) {
+      state = "error";
+      error = e.message;
+      message(error);
+      renderStates();
+    }
+  }
+}
+async function refreshView(id) {
+  const n = node(id),
+    edge = observerInput(id);
+  if (!n || !edge || published < 0) return;
+  const version = published,
+    generation = (requests.get(id) || 0) + 1;
+  requests.set(id, generation);
+  viewPending.add(id);
+  renderStates();
+  const p = n.params;
+  const params = new URLSearchParams({
+    session,
+    revision: version,
+    node: edge.from.node,
+    port: edge.from.port,
+    quantity: p.quantity,
+    channel: p.channel,
+    opd_unit: p.opd_unit,
+    latent: JSON.stringify(p.latent),
+  });
+  try {
+    const image = await api(`/api/canvas/image?${params}`);
+    if (published !== version || requests.get(id) !== generation || !node(id))
+      return;
+    viewErrors.delete(id);
+    maps.set(id, image);
+    drawVisual(id);
+    renderStates();
+  } catch (e) {
+    if (requests.get(id) === generation) {
+      viewErrors.set(id, e.message);
+      message(`Visualisation ${id} : ${e.message}`);
+      renderStates();
+    }
+  } finally {
+    if (requests.get(id) === generation) {
+      viewPending.delete(id);
+      renderStates();
+    }
+  }
+}
+function refreshViews() {
+  for (const n of config.nodes)
+    if (n.type === "Visualization") refreshView(n.id);
+}
+async function displayChanged(id, rebuild = false) {
+  saveDraft();
+  const settings = JSON.stringify(node(id)?.params);
+  try {
+    await api("/api/canvas/connect", config);
+    if (settings !== JSON.stringify(node(id)?.params)) return;
+    viewErrors.delete(id);
+    if (rebuild) renderNodes();
+    else drawVisual(id);
+    refreshView(id);
+    renderStates();
+    if (selected === id) renderInspector();
+    message(error);
+  } catch (failure) {
+    viewErrors.set(id, failure.message);
+    message(`Visualisation ${id} : ${failure.message}`);
+    renderStates();
+  }
+}
+function presentationChanged() {
+  saveDraft();
+  renderNodes();
+}
+const palettes = {
+  green: [
+    [18, 30, 26],
+    [35, 82, 61],
+    [99, 139, 62],
+    [207, 219, 100],
+    [255, 242, 185],
+  ],
+  gray: [
+    [10, 10, 10],
+    [250, 250, 250],
+  ],
+  magma: [
+    [0, 0, 4],
+    [80, 18, 123],
+    [183, 55, 121],
+    [252, 137, 97],
+    [252, 253, 191],
+  ],
+  diverging: [
+    [45, 78, 148],
+    [255, 255, 255],
+    [195, 48, 42],
+  ],
+};
+function color(palette, t) {
+  const values = palettes[palette] || palettes.green,
+    pos = Math.max(0, Math.min(1, t)) * (values.length - 1),
+    i = Math.min(values.length - 2, Math.floor(pos)),
+    fraction = pos - i;
+  return values[i].map((v, k) =>
+    Math.round(v + (values[i + 1][k] - v) * fraction),
+  );
+}
+function renderMap(canvas, image, p) {
+  const rect = canvas.getBoundingClientRect(),
+    ratio = devicePixelRatio;
+  canvas.width = Math.max(1, Math.round(rect.width * ratio));
+  canvas.height = Math.max(1, Math.round(rect.height * ratio));
+  const ctx = canvas.getContext("2d");
+  ctx.scale(ratio, ratio);
+  const w = rect.width,
+    h = rect.height;
+  ctx.fillStyle = "#f0f3e8";
+  ctx.fillRect(0, 0, w, h);
+  let lo = p.minimum ?? image.minimum,
+    hi = p.maximum ?? image.maximum;
+  if (p.quantity !== "intensity" && p.minimum === null && p.maximum === null) {
+    hi = Math.max(Math.abs(lo), Math.abs(hi));
+    lo = -hi;
+  }
+  const logarithmic = p.scale === "log" && p.quantity === "intensity",
+    floor = Math.max(hi * 1e-12, Number.MIN_VALUE);
+  const normalize = (v) =>
+    logarithmic
+      ? (Math.log10(Math.max(v, floor)) - Math.log10(Math.max(lo, floor))) /
+        (Math.log10(Math.max(hi, floor)) - Math.log10(Math.max(lo, floor)) || 1)
+      : (v - lo) / (hi - lo || 1);
+  const off = document.createElement("canvas");
+  off.width = image.nx;
+  off.height = image.ny;
+  const oc = off.getContext("2d"),
+    data = oc.createImageData(image.nx, image.ny);
+  for (let y = 0; y < image.ny; y++)
+    for (let x = 0; x < image.nx; x++) {
+      const offset = ((image.ny - 1 - y) * image.nx + x) * 4;
+      data.data.set(
+        [...color(p.colormap, normalize(image.values[y][x])), 255],
+        offset,
+      );
+    }
+  oc.putImageData(data, 0, 0);
+  const physical =
+    (image.nx * (image.x[1] - image.x[0])) /
+    (image.ny * (image.y[1] - image.y[0]));
+  let pw = Math.max(1, w - 77),
+    ph = Math.max(1, h - 42);
+  if (pw / ph > physical) pw = ph * physical;
+  else ph = pw / physical;
+  const x0 = 35 + (w - 77 - pw) / 2,
+    y0 = 8 + (h - 42 - ph) / 2;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, x0, y0, pw, ph);
+  ctx.strokeStyle = "#bdc9b1";
+  ctx.strokeRect(x0, y0, pw, ph);
+  const gradient = ctx.createLinearGradient(0, y0 + ph, 0, y0);
+  const colors = palettes[p.colormap];
+  colors.forEach((c, i) =>
+    gradient.addColorStop(i / (colors.length - 1), `rgb(${c.join(",")})`),
+  );
+  ctx.fillStyle = gradient;
+  ctx.fillRect(x0 + pw + 8, y0, 7, ph);
+  ctx.fillStyle = "#6b7861";
+  ctx.font = "8px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("x (m)", x0 + pw / 2, y0 + ph + 25);
+  const fmt = (v) => (v === 0 ? "0" : Number(v.toPrecision(2)).toString());
+  ctx.fillText(fmt(image.x[0]), x0, y0 + ph + 13);
+  ctx.fillText(fmt(image.x.at(-1)), x0 + pw, y0 + ph + 13);
+  ctx.save();
+  ctx.translate(x0 - 24, y0 + ph / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText("y (m)", 0, 0);
+  ctx.restore();
+  ctx.textAlign = "left";
+  ctx.font = "7px monospace";
+  ctx.fillText(hi.toExponential(1), x0 + pw + 18, y0 + 6);
+  ctx.fillText(
+    (logarithmic ? Math.max(lo, floor) : lo).toExponential(1),
+    x0 + pw + 18,
+    y0 + ph,
+  );
+}
+function drawVisual(id) {
+  const image = maps.get(id),
+    n = node(id),
+    card = $("nodes").querySelector(`[data-node="${CSS.escape(id)}"]`);
+  if (!image || !n || !card || viewErrors.has(id)) return;
+  card.querySelector(".visual-empty").hidden = true;
+  const canvas = card.querySelector("canvas");
+  canvas.dataset.revision = image.revision;
+  const drawParams = {
+    ...n.params,
+    quantity: image.quantity,
+    scale: image.quantity === "intensity" ? n.params.scale : "linear",
+  };
+  renderMap(canvas, image, drawParams);
+  const units = card.querySelector(".visual-unit");
+  units.children[0].textContent = image.unit;
+  units.children[1].textContent = `${image.minimum.toExponential(1)} → ${image.maximum.toExponential(1)}`;
+  if (expanded === id && $("expanded").open) {
+    $("expanded-title").textContent =
+      `${{ intensity: "Intensité", phase: "Phase", opd: "OPD" }[n.params.quantity]} · ${image.unit} — ${config.layout.positions[id].label || id} · r${image.revision}`;
+    renderMap($("expanded-image"), image, drawParams);
+  }
+}
+function control(parent, key, rule, object, scope, onchange) {
+  const wrap = el("div", undefined, "control"),
+    label = el("label", rule.label || key),
+    id = `${scope}-${key}`;
+  label.htmlFor = id;
+  if (rule.unit) label.append(el("span", rule.unit));
+  let input;
+  const options = {
+    grid: Object.keys(config.grids),
+    regime: ["fraunhofer", "fresnel"],
+    quantity: ["intensity", "phase", "opd"],
+    colormap: Object.keys(palettes),
+    scale: ["linear", "log"],
+    opd_unit: ["nm", "m"],
+    channel: [
+      "sum",
+      ...Array.from(
+        {
+          length:
+            result?.wavelengths.length || Number(config.spectrum.samples) || 1,
+        },
+        (_, i) => String(i),
+      ),
+    ],
+  };
+  if (options[rule.kind]) {
+    input = el("select");
+    for (const value of options[rule.kind]) {
+      const option = el("option", value);
+      option.value = value;
+      input.append(option);
+    }
+    input.value = object[key];
+  } else if (rule.kind === "array" || rule.kind === "latent") {
+    input = el("textarea");
+    input.value =
+      typeof object[key] === "string"
+        ? object[key]
+        : JSON.stringify(object[key]);
+    input.spellcheck = false;
+  } else {
+    input = el("input");
+    input.type =
+      rule.kind === "bool"
+        ? "checkbox"
+        : rule.kind === "text"
+          ? "text"
+          : "number";
+    if (input.type === "checkbox") input.checked = object[key];
+    else {
+      input.value = object[key] ?? "";
+      if (input.type === "number")
+        input.step = rule.kind === "integer" ? "1" : "any";
+    }
+  }
+  input.id = id;
+  const update = () => {
+    let value;
+    try {
+      if (input.type === "checkbox") value = input.checked;
+      else if (options[rule.kind]) value = input.value;
+      else if (rule.kind === "array" || rule.kind === "latent")
+        value = JSON.parse(input.value);
+      else if (rule.kind === "text") value = input.value;
+      else if (input.value === "" && rule.nullable) value = null;
+      else {
+        value = input.value === "" ? "" : Number(input.value);
+        if (!Number.isFinite(value)) value = input.value;
+      }
+      object[key] = value;
+      onchange(key);
+    } catch (e) {
+      object[key] = input.value;
+      message(`${scope}.${key} : ${e.message}`);
+      onchange(key);
+    }
+  };
+  input.addEventListener(
+    input.tagName === "SELECT" || input.type === "checkbox"
+      ? "change"
+      : "input",
+    update,
+  );
+  wrap.append(label, input);
+  parent.append(wrap);
+  return input;
+}
+function renderInspector() {
+  $("node-tab").classList.toggle("active", tab === "node");
+  $("settings-tab").classList.toggle("active", tab === "settings");
+  const parent = $("inspector");
+  parent.replaceChildren();
+  if (tab === "settings") {
+    control(
+      parent,
+      "precision",
+      { label: "Précision CPU", kind: "text" },
+      config,
+      "settings",
+      scienceChanged,
+    );
+    parent.append(el("div", "SPECTRE", "section-label"));
+    for (const [key, label, unit] of [
+      ["central_wavelength", "Longueur d’onde centrale", "m"],
+      ["delta_wavelength", "Largeur de bande", "m"],
+      ["f0", "Flux de référence f₀", "photons/s"],
+      ["magnitude", "Magnitude", "mag"],
+      ["samples", "Canaux spectraux", ""],
+    ])
+      control(
+        parent,
+        key,
+        { label, unit, kind: key === "samples" ? "integer" : "number" },
+        config.spectrum,
+        "spectrum",
+        scienceChanged,
+      );
+    for (const [name, grid] of Object.entries(config.grids)) {
+      parent.append(el("div", `GRILLE ${name}`, "section-label"));
+      for (const key of ["nx", "ny", "dx", "dy"])
+        control(
+          parent,
+          key,
+          {
+            label: key,
+            unit: key[0] === "n" ? "pixels" : "m",
+            kind: key[0] === "n" ? "integer" : "number",
+          },
+          grid,
+          name,
+          scienceChanged,
+        );
+    }
+    return;
+  }
+  if (selectedEdge !== null) {
+    const edge = config.connections[selectedEdge];
+    parent.append(
+      el("h3", "Connexion sélectionnée"),
+      el(
+        "p",
+        `${edge.from.node}.${edge.from.port} → ${edge.to.node}.${edge.to.port}`,
+      ),
+    );
+    const button = el("button", "Supprimer cette connexion", "danger");
+    button.onclick = removeSelection;
+    parent.append(button);
+    return;
+  }
+  const n = node(selected);
+  if (!n) {
+    parent.append(
+      el("h3", "Votre banc optique"),
+      el(
+        "p",
+        "Sélectionnez une boîte pour éditer ses paramètres. Reliez un port de sortie à un port d’entrée par glissement ou par deux clics.",
+        "inspector-note",
+      ),
+    );
+    return;
+  }
+  parent.append(el("div", n.id, "identifier"), el("h3", catalog[n.type].label));
+  control(
+    parent,
+    "label",
+    { label: "Nom affiché (présentation)", kind: "text" },
+    config.layout.positions[n.id],
+    n.id,
+    () => {
+      saveDraft();
+      const h = $("nodes").querySelector(
+        `[data-node="${CSS.escape(n.id)}"] h3`,
+      );
+      if (h)
+        h.textContent =
+          config.layout.positions[n.id].label || catalog[n.type].label;
+    },
+  );
+  for (const [key, rule] of Object.entries(catalog[n.type].fields)) {
+    if (n.type === "Kolmogorov" && key === "realization") continue;
+    if (n.type === "Visualization" && key === "latent") {
+      const input = observerInput(n.id),
+        meta = result?.nodes.find((x) => x.id === input?.from.node);
+      if (!meta?.dimensions.length) {
+        parent.append(
+          el("p", "Aucune dimension latente dans ce résultat.", "mini-stats"),
+        );
+        continue;
+      }
+      for (const dim of meta.dimensions) {
+        if (n.params.latent[dim.name] === undefined)
+          n.params.latent[dim.name] = 0;
+        control(
+          parent,
+          dim.name,
+          {
+            label: `${dim.name} · ${dim.size} échantillons`,
+            kind: "integer",
+            unit: dim.unit || "",
+          },
+          n.params.latent,
+          `${n.id}-latent`,
+          () => displayChanged(n.id),
+        );
+      }
+      continue;
+    }
+    const handler =
+      n.type === "Visualization"
+        ? () => displayChanged(n.id)
+        : () => {
+            scienceChanged();
+            const summaryNode = $("nodes").querySelector(
+              `[data-node="${CSS.escape(n.id)}"] .node-summary`,
+            );
+            if (summaryNode) summaryNode.textContent = summary(n);
+          };
+    control(parent, key, rule, n.params, n.id, handler);
+  }
+  if (n.type === "Kolmogorov") {
+    const button = el("button", "Nouvelle réalisation");
+    button.id = "new-realization";
+    button.onclick = () => {
+      n.params.realization++;
+      scienceChanged();
+      renderNodes();
+      renderInspector();
+    };
+    parent.append(
+      button,
+      el(
+        "p",
+        `Réalisation ${n.params.realization} · seed effectif = (seed + 104729 × compteur) mod 2³¹. Changer r₀ ou la grille reconstruit la réalisation ; déplacer ou afficher ne la modifie jamais.`,
+        "inspector-note",
+      ),
+    );
+  }
+  if (
+    n.type === "DeformableMirror" &&
+    Array.isArray(n.params.commands) &&
+    Number(n.params.stroke) > 0
+  ) {
+    n.params.commands.slice(0, 12).forEach((value, i) => {
+      const wrap = el("div", undefined, "control"),
+        label = el("label", `Noll ${i + 2} · ${(value * 1e9).toFixed(1)} nm`),
+        slider = el("input");
+      slider.type = "range";
+      slider.min = -n.params.stroke;
+      slider.max = n.params.stroke;
+      slider.step = n.params.stroke / 200;
+      slider.value = value;
+      slider.id = `${n.id}-slider-${i}`;
+      label.htmlFor = slider.id;
+      slider.oninput = () => {
+        n.params.commands[i] = Number(slider.value);
+        label.textContent = `Noll ${i + 2} · ${(n.params.commands[i] * 1e9).toFixed(1)} nm`;
+        const commands = $(`${n.id}-commands`);
+        if (commands) commands.value = JSON.stringify(n.params.commands);
+        scienceChanged();
+      };
+      wrap.append(label, slider);
+      parent.append(wrap);
+    });
+  }
+  if (n.type === "DeformableMirror")
+    parent.append(
+      el(
+        "p",
+        "Coefficients en mètres OPD, Noll 2… sans piston. Grille carrée isotrope selon la base native actuelle. Aucun déplacement mécanique.",
+        "inspector-note",
+      ),
+    );
+  if (n.type === "Visualization")
+    parent.append(
+      el(
+        "p",
+        "Observateur uniquement : colormap, limites, quantité, longueur d’onde et dimensions réutilisent le résultat. Les branchements ne modifient jamais la propagation.",
+        "inspector-note",
+      ),
+    );
+  const deleteButton = el("button", "Supprimer le bloc", "danger");
+  deleteButton.onclick = removeSelection;
+  parent.append(deleteButton);
+}
+function loadConfig(next, initial = false) {
+  const before = config ? semantic(config) : null;
+  config = clone(next);
+  selected =
+    config.nodes.find((n) => n.type === "DeformableMirror")?.id ||
+    config.nodes[1]?.id;
+  selectedEdge = null;
+  armed = null;
+  $("name").value = config.name;
+  maps.forEach((_, id) => {
+    if (!node(id)) maps.delete(id);
+  });
+  renderPalette();
+  renderNodes();
+  renderInspector();
+  saveDraft();
+  if (initial || semantic(config) !== before) scienceChanged();
+  else refreshViews();
+}
+$("viewport").onpointerdown = (e) => {
+  if (e.button !== 0 || e.target.closest(".node,.wire")) return;
+  selected = null;
+  selectedEdge = null;
+  selectStyles();
+  renderInspector();
+  gesture = {
+    kind: "pan",
+    clientX: e.clientX,
+    clientY: e.clientY,
+    x: config.layout.viewport.x,
+    y: config.layout.viewport.y,
+  };
+};
+window.addEventListener("pointermove", (e) => {
+  if (!gesture || !config) return;
+  $("tooltip").hidden = true;
+  if (gesture.kind === "pan") {
+    const v = config.layout.viewport;
+    v.x = gesture.x + e.clientX - gesture.clientX;
+    v.y = gesture.y + e.clientY - gesture.clientY;
+    transform();
+  } else if (gesture.kind === "node") {
+    const p = worldPoint(e.clientX, e.clientY),
+      pose = config.layout.positions[gesture.id];
+    pose.x = gesture.x + p.x - gesture.start.x;
+    pose.y = gesture.y + p.y - gesture.start.y;
+    const card = $("nodes").querySelector(
+      `[data-node="${CSS.escape(gesture.id)}"]`,
+    );
+    card.style.left = `${pose.x}px`;
+    card.style.top = `${pose.y}px`;
+    drawWires();
+  } else {
+    gesture.end = worldPoint(e.clientX, e.clientY);
+    drawWires();
+  }
+});
+window.addEventListener("pointerup", (e) => {
+  const g = gesture;
+  gesture = null;
+  if (g?.kind === "wire") {
+    const target = document
+      .elementFromPoint(e.clientX, e.clientY)
+      ?.closest(".port.input");
+    if (target) {
+      connect(g.from, { node: target.dataset.node, port: target.dataset.port });
+      armed = null;
+    }
+    drawWires();
+  }
+  saveDraft();
+});
+$("viewport").addEventListener(
+  "wheel",
+  (e) => {
+    e.preventDefault();
+    zoom(Math.exp(-e.deltaY * 0.001), e.clientX, e.clientY);
+  },
+  { passive: false },
+);
+$("viewport").ondragover = (e) => {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "copy";
+};
+$("viewport").ondrop = (e) => {
+  e.preventDefault();
+  const kind = e.dataTransfer.getData("application/x-fiatlux-component");
+  if (catalog[kind]) addNode(kind, worldPoint(e.clientX, e.clientY));
+};
+window.addEventListener("keydown", (e) => {
+  if (e.target.closest("input,textarea,select")) return;
+  if (e.key === "Delete" || e.key === "Backspace") {
+    e.preventDefault();
+    removeSelection();
+  }
+  if (e.key === "Escape") {
+    armed = null;
+    gesture = null;
+    $("tooltip").hidden = true;
+    drawWires();
+  }
+});
+$("fit").onclick = fit;
+$("zoom-in").onclick = () => zoom(1.2);
+$("zoom-out").onclick = () => zoom(1 / 1.2);
+$("delete").onclick = removeSelection;
+$("search").oninput = renderPalette;
+$("node-tab").onclick = () => {
+  tab = "node";
+  renderInspector();
+};
+$("settings-tab").onclick = () => {
+  tab = "settings";
+  renderInspector();
+};
+$("name").oninput = () => {
+  config.name = $("name").value;
+  saveDraft();
+};
+$("run").onclick = scienceChanged;
+$("close-expanded").onclick = () => {
+  $("expanded").close();
+  expanded = null;
+};
+$("expanded").addEventListener("close", () => {
+  expanded = null;
+});
+$("open").onclick = () => $("file").click();
+$("file").onchange = async () => {
+  const file = $("file").files[0];
+  if (!file) return;
+  try {
+    if (file.size > 1000000) throw new Error("Fichier supérieur à 1 Mo");
+    const data = JSON.parse(await file.text());
+    const checked = await api("/api/canvas/validate", data);
+    loadConfig(checked.configuration);
+    message("");
+  } catch (e) {
+    message(e.message);
+  } finally {
+    $("file").value = "";
+  }
+};
+$("save").onclick = async () => {
+  try {
+    await api("/api/canvas/validate", config);
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(config, null, 2) + "\n"], {
+        type: "application/json",
+      }),
+    );
+    const anchor = el("a");
+    anchor.href = url;
+    anchor.download = "fiatlux-canvas-v2.json";
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) {
+    message(e.message);
+  }
+};
+new ResizeObserver(() => {
+  if (!config) return;
+  for (const id of maps.keys()) drawVisual(id);
+}).observe($("viewport"));
+(async () => {
+  try {
+    const data = await api("/api/canvas/catalog");
+    catalog = data.components;
+    presets = data.examples;
+    portTypes = data.ports;
+    for (const [key, preset] of Object.entries(presets)) {
+      const option = el("option", preset.name);
+      option.value = key;
+      $("examples").append(option);
+    }
+    let initial = presets["04_canvas"] || Object.values(presets)[0];
+    const draft = localStorage.getItem("fiatlux-canvas-v2");
+    if (draft) {
+      try {
+        initial = (await api("/api/canvas/validate", JSON.parse(draft)))
+          .configuration;
+        restored = true;
+      } catch (_) {
+        message("Brouillon incompatible ; exemple initial chargé.");
+      }
+    }
+    $("examples").value = "04_canvas";
+    loadConfig(initial, true);
+    if (!restored) fit();
+    $("examples").onchange = () => {
+      loadConfig(presets[$("examples").value]);
+      fit();
+      message("");
+    };
+  } catch (e) {
+    message(e.message);
+  }
+})();

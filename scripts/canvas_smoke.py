@@ -73,6 +73,28 @@ def main():
             assert changed.computed==['dm','focus','detector']
             assert all(engine.entries[key] is value for key,value in upstream.items())
             screen=changed.snapshots['atmosphere'].opd.clone()
+            # Delay one genuine old HTTP status response, publish a newer native
+            # calculation, then release the old response: the browser must ignore it.
+            delayed=[]
+            def hold_first_status(route):
+                if not delayed:
+                    response=route.fetch()
+                    delayed.append((route,response))
+                else:
+                    route.continue_()
+            page.route('**/api/canvas/status?*',hold_first_status)
+            page.locator('#dm-commands').fill('[5e-8,-1.5e-8,6e-8]')
+            page.wait_for_timeout(800)
+            assert delayed, 'No old status response captured'
+            page.locator('#dm-commands').fill('[7e-8,-1.5e-8,6e-8]')
+            page.wait_for_function('() => published === revision && state === "current"',timeout=120000)
+            latest_revision=page.evaluate('published')
+            delayed[0][0].fulfill(response=delayed[0][1])
+            page.wait_for_timeout(400)
+            assert page.evaluate('published')==latest_revision
+            assert page.evaluate('result.computed')==['dm','focus','detector']
+            assert server.canvas_manager.sessions[session].published==latest_revision
+            page.unroute('**/api/canvas/status?*',hold_first_status)
             # Invalid scientific input preserves last map, does not execute.
             old_count=engine.evaluations
             page.locator('#dm-commands').fill('[invalid]')
