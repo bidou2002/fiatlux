@@ -23,6 +23,7 @@ def main():
     finally:
         server.server_close()
         server.manager.close()
+        server.canvas_manager.close()
 
 
 if __name__ == '__main__':

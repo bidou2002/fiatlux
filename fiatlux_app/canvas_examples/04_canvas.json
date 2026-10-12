@@ -1,0 +1,292 @@
+{
+  "name": "Banc optique · atmosphère & DM",
+  "precision": "float64",
+  "spectrum": {
+    "central_wavelength": 1.65e-06,
+    "delta_wavelength": 0.0,
+    "f0": 368000000.0,
+    "magnitude": 0.0,
+    "samples": 1
+  },
+  "grids": {
+    "pupil": {
+      "nx": 64,
+      "ny": 64,
+      "dx": 0.015625,
+      "dy": 0.015625
+    },
+    "focal": {
+      "nx": 80,
+      "ny": 80,
+      "dx": 4.125e-06,
+      "dy": 4.125e-06
+    }
+  },
+  "format": "fiatlux-canvas",
+  "version": 2,
+  "nodes": [
+    {
+      "id": "source",
+      "type": "PlaneWave",
+      "params": {
+        "grid": "pupil"
+      }
+    },
+    {
+      "id": "pupil",
+      "type": "CircularAperture",
+      "params": {
+        "grid": "pupil",
+        "radius": 0.5
+      }
+    },
+    {
+      "id": "atmosphere",
+      "type": "Kolmogorov",
+      "params": {
+        "grid": "pupil",
+        "r0": 0.2,
+        "reference_wavelength": 5e-07,
+        "outer_scale": null,
+        "seed": 42,
+        "realization": 0
+      }
+    },
+    {
+      "id": "dm",
+      "type": "DeformableMirror",
+      "params": {
+        "grid": "pupil",
+        "commands": [
+          3e-08,
+          -1.5e-08,
+          6e-08
+        ],
+        "stroke": 1e-06
+      }
+    },
+    {
+      "id": "focus",
+      "type": "MFTPropagator",
+      "params": {
+        "output_grid": "focal",
+        "propagation": "fraunhofer",
+        "focal_length": 10.0,
+        "distance": null
+      }
+    },
+    {
+      "id": "detector",
+      "type": "Detector",
+      "params": {
+        "grid": "focal",
+        "exposure_time": 0.15,
+        "quantum_efficiency": 1.0,
+        "photon_noise": false,
+        "dark_current": 0.0,
+        "readout_noise_variance": 0.0,
+        "digitize": false,
+        "sensitivity": 1.0,
+        "offset": 0,
+        "bitdepth": 16,
+        "random_seed": 42
+      }
+    },
+    {
+      "id": "view-phase",
+      "type": "Visualization",
+      "params": {
+        "quantity": "phase",
+        "channel": "0",
+        "colormap": "diverging",
+        "scale": "linear",
+        "minimum": null,
+        "maximum": null,
+        "opd_unit": "nm",
+        "latent": {}
+      }
+    },
+    {
+      "id": "view-opd",
+      "type": "Visualization",
+      "params": {
+        "quantity": "opd",
+        "channel": "sum",
+        "colormap": "diverging",
+        "scale": "linear",
+        "minimum": null,
+        "maximum": null,
+        "opd_unit": "nm",
+        "latent": {}
+      }
+    },
+    {
+      "id": "view-intensity",
+      "type": "Visualization",
+      "params": {
+        "quantity": "intensity",
+        "channel": "sum",
+        "colormap": "green",
+        "scale": "linear",
+        "minimum": null,
+        "maximum": null,
+        "opd_unit": "nm",
+        "latent": {}
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "source",
+        "port": "field"
+      },
+      "to": {
+        "node": "pupil",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "pupil",
+        "port": "field"
+      },
+      "to": {
+        "node": "atmosphere",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "atmosphere",
+        "port": "field"
+      },
+      "to": {
+        "node": "dm",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "dm",
+        "port": "field"
+      },
+      "to": {
+        "node": "focus",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "focus",
+        "port": "field"
+      },
+      "to": {
+        "node": "detector",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "atmosphere",
+        "port": "field"
+      },
+      "to": {
+        "node": "view-phase",
+        "port": "field"
+      }
+    },
+    {
+      "from": {
+        "node": "dm",
+        "port": "opd"
+      },
+      "to": {
+        "node": "view-opd",
+        "port": "opd"
+      }
+    },
+    {
+      "from": {
+        "node": "focus",
+        "port": "field"
+      },
+      "to": {
+        "node": "view-intensity",
+        "port": "field"
+      }
+    }
+  ],
+  "layout": {
+    "positions": {
+      "source": {
+        "x": 35,
+        "y": 45,
+        "width": 210,
+        "height": 150,
+        "label": ""
+      },
+      "pupil": {
+        "x": 270,
+        "y": 45,
+        "width": 210,
+        "height": 150,
+        "label": ""
+      },
+      "focus": {
+        "x": 975,
+        "y": 45,
+        "width": 210,
+        "height": 150,
+        "label": ""
+      },
+      "detector": {
+        "x": 1210,
+        "y": 45,
+        "width": 210,
+        "height": 150,
+        "label": ""
+      },
+      "atmosphere": {
+        "x": 505,
+        "y": 45,
+        "width": 210,
+        "height": 150,
+        "label": ""
+      },
+      "dm": {
+        "x": 740,
+        "y": 45,
+        "width": 210,
+        "height": 150,
+        "label": ""
+      },
+      "view-phase": {
+        "x": 330,
+        "y": 310,
+        "width": 280,
+        "height": 290,
+        "label": ""
+      },
+      "view-opd": {
+        "x": 675,
+        "y": 310,
+        "width": 280,
+        "height": 290,
+        "label": ""
+      },
+      "view-intensity": {
+        "x": 1020,
+        "y": 310,
+        "width": 280,
+        "height": 290,
+        "label": ""
+      }
+    },
+    "viewport": {
+      "x": 25,
+      "y": 40,
+      "zoom": 0.75
+    }
+  }
+}
