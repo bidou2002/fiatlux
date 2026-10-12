@@ -297,27 +297,53 @@ class SquarePTTZonalBasis(ControlBasis):
 @dataclass
 @register_type("FourierBasis")
 class FourierBasis(ControlBasis):
+    """Real Fourier representatives for a sorted symmetric frequency set.
+
+    Default frequencies are cycles/metre. For cycles/aperture, specify
+    ``frequency_unit="cycles/aperture"`` and an aperture diameter in metres.
+    Positive signed pairs use cosine, negative pairs sine; (0, 0) is piston.
+    Columns retain frequency-pair row-major ordering and unit pupil L2 norm.
+    """
+
     pixel_grid: Grid
-    frequencies: torch.Tensor  # spatial frequencies in cycles per aperture
+    frequencies: torch.Tensor  # cycles/metre by default
     pupil: Mask
+    frequency_unit: str = "cycles/m"
+    aperture_diameter: float | None = None
+
+    def __post_init__(self):
+        self._validated_frequencies()
+        if self.frequency_unit not in ("cycles/m", "cycles/aperture"):
+            raise ValueError("frequency_unit must be 'cycles/m' or 'cycles/aperture'.")
+        if self.aperture_diameter is not None and (
+            not math.isfinite(self.aperture_diameter) or self.aperture_diameter <= 0
+        ):
+            raise ValueError("aperture_diameter must be positive and finite, in metres.")
+        if self.frequency_unit == "cycles/aperture" and self.aperture_diameter is None:
+            raise ValueError("cycles/aperture requires aperture_diameter in metres.")
+
+    def _validated_frequencies(self):
+        frequencies = torch.as_tensor(self.frequencies, device=self.pixel_grid.device,
+                                      dtype=self.pixel_grid.dtype)
+        if (frequencies.ndim != 1 or frequencies.numel() == 0
+                or not torch.isfinite(frequencies).all()
+                or frequencies.numel() % 2 != 1
+                or not torch.all(frequencies[1:] > frequencies[:-1])
+                or not torch.equal(frequencies, -frequencies.flip(0))):
+            raise ValueError("frequencies must be a finite, strictly increasing, symmetric "
+                             "1-D set including zero, such as [-f, 0, f].")
+        return frequencies
 
     def _mode_selection(self) -> torch.Tensor:
         """Return the sine/cosine selection without graphical side effects."""
-        n_freqs = len(self.frequencies)
-        use_cosine = torch.full(
-            (n_freqs, n_freqs),
-            True,
-            device=self.pixel_grid.device,
-        )
-        center_freq = n_freqs**2 / 2
-        use_cosine[: int(center_freq // n_freqs), :] = False
-        use_cosine[int(center_freq // n_freqs), : int(center_freq % n_freqs)] = False
-        return use_cosine
+        frequencies = self._validated_frequencies()
+        fx, fy = frequencies[:, None], frequencies[None, :]
+        return (fx > 0) | ((fx == 0) & (fy >= 0))
 
     def build_command_matrix(self):
-        frequencies = self.frequencies.to(
-            device=self.pixel_grid.device, dtype=self.pixel_grid.dtype
-        )
+        frequencies = self._validated_frequencies()
+        if self.frequency_unit == "cycles/aperture":
+            frequencies = frequencies / self.aperture_diameter
         n_freqs = len(frequencies)
 
         # Pixel coordinate grids  (resolution, resolution)
@@ -340,9 +366,14 @@ class FourierBasis(ControlBasis):
             use_cosine[:, :, None, None], torch.cos(phase), torch.sin(phase)
         )
 
-        modes = (modes * self.pupil.transmission[None, None, ...]) / (
-            modes * self.pupil.transmission[None, None, ...]
-        ).pow(2).sum(dim=(2, 3), keepdim=True).sqrt()
+        modes = modes * self.pupil.transmission[None, None, ...]
+        norms = modes.abs().square().sum(dim=(2, 3), keepdim=True).sqrt()
+        # Reject responses indistinguishable from zero at the working precision.
+        threshold = torch.finfo(self.pixel_grid.dtype).eps * norms.max()
+        if not torch.isfinite(norms).all() or torch.any(norms <= threshold):
+            raise ValueError("Fourier modes have zero or non-finite pupil response; "
+                             "change frequencies, sampling or pupil support.")
+        modes = modes / norms
 
         return modes.reshape(n_freqs**2, self.pixel_grid.nx * self.pixel_grid.ny).T
 
@@ -599,3 +630,4 @@ class DeformableMirror(torch.nn.Module):
         plt.xlabel("x (m)")
         plt.ylabel("y (m)")
         plt.show()
+
