@@ -1,0 +1,71 @@
+{
+  "format": "fiatlux-chain",
+  "version": 1,
+  "name": "Pupille circulaire · Fraunhofer",
+  "precision": "float64",
+  "spectrum": {
+    "central_wavelength": 1.65e-06,
+    "delta_wavelength": 0.0,
+    "f0": 368000000.0,
+    "magnitude": 0.0,
+    "samples": 1
+  },
+  "grids": {
+    "pupil": {
+      "nx": 64,
+      "ny": 64,
+      "dx": 0.015625,
+      "dy": 0.015625
+    },
+    "focal": {
+      "nx": 80,
+      "ny": 80,
+      "dx": 4.125e-06,
+      "dy": 4.125e-06
+    }
+  },
+  "blocks": [
+    {
+      "id": "source",
+      "type": "PlaneWave",
+      "params": {
+        "grid": "pupil"
+      }
+    },
+    {
+      "id": "pupil",
+      "type": "CircularAperture",
+      "params": {
+        "grid": "pupil",
+        "radius": 0.5
+      }
+    },
+    {
+      "id": "focus",
+      "type": "MFTPropagator",
+      "params": {
+        "output_grid": "focal",
+        "propagation": "fraunhofer",
+        "focal_length": 10.0,
+        "distance": null
+      }
+    },
+    {
+      "id": "detector",
+      "type": "Detector",
+      "params": {
+        "grid": "focal",
+        "exposure_time": 0.15,
+        "quantum_efficiency": 1.0,
+        "photon_noise": false,
+        "dark_current": 0.0,
+        "readout_noise_variance": 0.0,
+        "digitize": false,
+        "sensitivity": 1.0,
+        "offset": 0,
+        "bitdepth": 16,
+        "random_seed": 42
+      }
+    }
+  ]
+}

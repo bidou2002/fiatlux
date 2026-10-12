@@ -510,3 +510,17 @@ See the Git history for the complete list of contributors.
 ## License
 
 Fiatlux is distributed under the terms of the [MIT License](LICENSE).
+
+
+
+## Local optical-chain editor
+
+Build and inspect a linear optical chain with the real FIATLUX engine in a local
+browser. The separate application has no additional runtime GUI dependencies:
+
+```bash
+python -m pip install -e .
+python -m fiatlux_app
+```
+
+See [installation, scientific conventions, examples and saved format](docs/local_gui.md).
