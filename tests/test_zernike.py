@@ -19,11 +19,13 @@ def test_analytical_modes_and_precision(device, dtype):
     modes = zernike_basis(4, rho=rho, theta=theta)
     expected = torch.stack([torch.ones_like(x), 2*x, 2*y,
                             math.sqrt(3)*(2*rho.square()-1)])
-    torch.testing.assert_close(modes, expected)
+    tolerance = 3e-14 if dtype == torch.float64 else 2e-6
+    torch.testing.assert_close(modes, expected, rtol=tolerance, atol=tolerance)
     assert modes.dtype == dtype and modes.device == x.device
     assert torch.isfinite(modes).all()
     torch.testing.assert_close(zernike(1, 1, rho=rho, theta=theta,
-                                     noll_normalize=False), x)
+                                     noll_normalize=False), x,
+                               rtol=tolerance, atol=tolerance)
     torch.testing.assert_close(R(1, 0, rho), torch.zeros_like(rho))
 
 
