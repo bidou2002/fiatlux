@@ -346,3 +346,40 @@ def test_null_command_mode_is_finite_and_reconstructs_observable_modes():
         rtol=1e-12,
         atol=1e-15,
     )
+
+
+
+@pytest.mark.parametrize("method", ["calibrate_one_sided", "calibrate_push_pull"])
+@pytest.mark.parametrize("fail", [False, True])
+def test_recalibration_invalidates_previous_inverse(method, fail):
+    calibration, dm, response, _ = make_linear_calibration()
+    calibrate = getattr(calibration, method)
+    calibrate(verbose=False)
+    calibration.compute_control_matrix()
+    saved_commands = dm.commands.detach().clone()
+    new_response = 2 * response
+
+    def acquire():
+        if fail:
+            raise RuntimeError("camera failure")
+        return (new_response @ dm.commands).reshape(2, 2)
+
+    calibration.acquiring_function = acquire
+    if fail:
+        with pytest.raises(RuntimeError, match="camera failure"):
+            calibrate(verbose=False)
+        assert calibration.matrix is None
+    else:
+        calibrate(verbose=False)
+        torch.testing.assert_close(calibration.matrix, new_response)
+    torch.testing.assert_close(dm.commands, saved_commands)
+    assert not hasattr(calibration, "control_matrix")
+    for diagnostic in ("singular_values", "condition_number"):
+        with pytest.raises(RuntimeError, match="compute_control_matrix"):
+            getattr(calibration, diagnostic)
+    if fail:
+        with pytest.raises(RuntimeError, match="calibrate"):
+            calibration.compute_control_matrix()
+    else:
+        inverse = calibration.compute_control_matrix()
+        torch.testing.assert_close(inverse, torch.linalg.pinv(new_response))
