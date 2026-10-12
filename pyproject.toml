@@ -72,4 +72,4 @@ testpaths = ["tests"]
 
 
 [tool.setuptools.package-data]
-fiatlux_app = ["static/*.html", "static/*.css", "static/*.js", "examples/*.json"]
+fiatlux_app = ["static/*.html", "static/*.css", "static/*.js", "examples/*.json", "canvas_examples/*.json"]

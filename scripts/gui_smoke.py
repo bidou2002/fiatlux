@@ -25,7 +25,7 @@ def main():
             browser = playwright.chromium.launch(headless=True)
             page = browser.new_page(viewport=dict(width=1440, height=1080), device_scale_factor=1)
             page.on('pageerror', lambda error: errors.append(str(error)))
-            page.goto(f'http://127.0.0.1:{server.server_port}')
+            page.goto(f'http://127.0.0.1:{server.server_port}/linear')
             expect(page.locator('.block')).to_have_count(4)
             for key, config in examples().items():
                 page.locator('#examples').select_option(key)
@@ -129,6 +129,7 @@ def main():
         server.shutdown()
         server.server_close()
         server.manager.close()
+        server.canvas_manager.close()
         worker.join(timeout=5)
     print('Real FIATLUX browser smoke passed: examples, spectral views, OPD, save/reload, stale state, edit/order/add/delete, errors and mobile.')
 

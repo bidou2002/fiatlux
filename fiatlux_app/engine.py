@@ -44,32 +44,11 @@ def build_system(config):
     mask_classes = dict(CircularAperture=CircularAperture, ELTHarmoniPupil=ELTHarmoniPupil,
                         Step=Step, ZeldaMask=ZeldaMask, ZeldaStop=ZeldaStop)
     for block in config['blocks'][1:]:
-        kind, params = block['type'], dict(block['params'])
-        try:
-            grid = grids[params.pop('grid')] if 'grid' in params else None
-            if kind in mask_classes:
-                obj = mask_classes[kind](grid=grid, **params)
-            elif kind == 'Kolmogorov':
-                model = KolmogorovAtmosphereModel(grid=grid, **params)
-                obj = Atmosphere(grid, model, recompute=False)
-            elif kind == 'DeformableMirror':
-                commands = params.pop('commands')
-                # Zernike is modal; this constructor layout does not define zonal influences.
-                obj = DeformableMirror(grid, ActuatorGrid(len(commands), 1, grid.dx), grid,
-                                       ZernikeBasis(grid, len(commands)), **params)
-                obj.commands = torch.tensor(commands, dtype=dtype)
-            elif kind == 'MFTPropagator':
-                obj = MFTPropagator(output_grid=grids[params.pop('output_grid')], **params)
-            elif kind == 'FFTPropagator':
-                obj = FFTPropagator(**params)
-            elif kind == 'Detector':
-                detector = Detector(grid=grid, **params)
-                continue
-            else:
-                raise ConfigurationError(f'Composant non pris en charge : {kind}')
+        obj = construct_element(block, grids)
+        if block['type'] == 'Detector':
+            detector = obj
+        else:
             objects.append(obj)
-        except (ValueError, TypeError, RuntimeError) as error:
-            raise ConfigurationError(f'Bloc {block["id"]} ({kind}) : {error}') from error
     system = SerialSystem(objects)
     # Reuse the existing grid-chain preflight where it models all planes.
     # FFT owns a wavelength-dependent output_grid_for contract, handled above.
@@ -190,3 +169,46 @@ def execute(config):
         except (ValueError, TypeError, RuntimeError) as error:
             raise ConfigurationError(f'Bloc {config["blocks"][-1]["id"]} (Detector) : {error}') from error
     return RunResult(prepared, trace, time.perf_counter()-start)
+
+
+def construct_element(block, grids):
+    import torch
+    from fiatlux.core.grid import Grid
+    from fiatlux.core.source import PlaneWave
+    from fiatlux.core.spectrum import Band, Spectrum
+    from fiatlux.optics.atmosphere import KolmogorovAtmosphereModel
+    from fiatlux.optics.elements.deformable_mirror import ActuatorGrid, DeformableMirror, ZernikeBasis
+    from fiatlux.optics.elements.mask import Atmosphere, CircularAperture, Step, ZeldaMask, ZeldaStop
+    from fiatlux.optics.elements.segmented_aperture import ELTHarmoniPupil
+    from fiatlux.optics.propagator import MFTPropagator, FFTPropagator
+    from fiatlux.optics.detector import Detector
+    from fiatlux.system.optical_system import SerialSystem
+
+
+    mask_classes = dict(CircularAperture=CircularAperture, ELTHarmoniPupil=ELTHarmoniPupil,
+                        Step=Step, ZeldaMask=ZeldaMask, ZeldaStop=ZeldaStop)
+    kind, params = block['type'], dict(block['params'])
+    try:
+        grid = grids[params.pop('grid')] if 'grid' in params else None
+        if kind in mask_classes:
+            obj = mask_classes[kind](grid=grid, **params)
+        elif kind == 'Kolmogorov':
+            model = KolmogorovAtmosphereModel(grid=grid, **params)
+            obj = Atmosphere(grid, model, recompute=False)
+        elif kind == 'DeformableMirror':
+            commands = params.pop('commands')
+            # Zernike is modal; this constructor layout does not define zonal influences.
+            obj = DeformableMirror(grid, ActuatorGrid(len(commands), 1, grid.dx), grid,
+                                   ZernikeBasis(grid, len(commands)), **params)
+            obj.commands = torch.tensor(commands, dtype=grid.dtype)
+        elif kind == 'MFTPropagator':
+            obj = MFTPropagator(output_grid=grids[params.pop('output_grid')], **params)
+        elif kind == 'FFTPropagator':
+            obj = FFTPropagator(**params)
+        elif kind == 'Detector':
+            obj = Detector(grid=grid, **params)
+        else:
+            raise ConfigurationError(f'Composant non pris en charge : {kind}')
+        return obj
+    except (ValueError, TypeError, RuntimeError) as error:
+        raise ConfigurationError(f'Bloc {block["id"]} ({kind}) : {error}') from error

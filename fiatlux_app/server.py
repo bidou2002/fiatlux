@@ -8,7 +8,7 @@ import threading
 from urllib.parse import parse_qs, urlsplit
 import uuid
 
-from .model import CATALOG, ConfigurationError, examples, loads, validate
+from .model import CATALOG, ConfigurationError, examples, loads, parse_json, validate
 
 
 class BusyError(RuntimeError):
@@ -60,6 +60,9 @@ class RunManager:
 
 def make_server(port=8765, manager=None):
     manager = manager or RunManager()
+    from .revisions import RevisionManager
+    from .graph import GRAPH_CATALOG, graph_examples, compile_graph, check_connections, ports, upgrade
+    canvas_manager = RevisionManager()
     static = Path(__file__).parent / 'static'
 
     class Handler(BaseHTTPRequestHandler):
@@ -89,7 +92,18 @@ def make_server(port=8765, manager=None):
                 return
             url = urlsplit(self.path)
             try:
-                if url.path == '/api/catalog':
+                if url.path == '/api/canvas/catalog':
+                    self.send(200, dict(components=GRAPH_CATALOG, examples=graph_examples(),
+                                       ports={kind: ports(kind) for kind in GRAPH_CATALOG}))
+                elif url.path == '/api/canvas/status':
+                    self.send(200, canvas_manager.status(parse_qs(url.query).get('session', [''])[0]))
+                elif url.path == '/api/canvas/image':
+                    p = parse_qs(url.query)
+                    self.send(200, canvas_manager.image(p.get('session', [''])[0], int(p.get('revision', ['-1'])[0]),
+                              node=p.get('node', [''])[0], port=p.get('port', ['field'])[0],
+                              quantity=p.get('quantity', ['intensity'])[0], channel=p.get('channel', ['sum'])[0],
+                              opd_unit=p.get('opd_unit', ['nm'])[0], latent=json.loads(p.get('latent', ['{}'])[0])))
+                elif url.path == '/api/catalog':
                     self.send(200, dict(components=CATALOG, examples=examples()))
                 elif url.path == '/api/status':
                     params = parse_qs(url.query)
@@ -101,8 +115,8 @@ def make_server(port=8765, manager=None):
                               quantity=params.get('quantity', ['intensity'])[0],
                               channel=params.get('channel', ['sum'])[0],
                               opd_unit=params.get('opd_unit', ['nm'])[0]))
-                elif url.path in ('/', '/index.html', '/app.js', '/style.css'):
-                    name = 'index.html' if url.path == '/' else url.path[1:]
+                elif url.path in ('/', '/index.html', '/linear', '/app.js', '/style.css', '/canvas.js', '/canvas.css'):
+                    name = 'linear.html' if url.path == '/linear' else ('index.html' if url.path == '/' else url.path[1:])
                     mime = {'html': 'text/html', 'js': 'text/javascript', 'css': 'text/css'}[name.rsplit('.', 1)[1]]
                     self.send(200, (static / name).read_bytes(), mime+'; charset=utf-8')
                 else:
@@ -120,7 +134,22 @@ def make_server(port=8765, manager=None):
                 length = int(self.headers.get('Content-Length', '0'))
                 if not 0 < length <= 1_000_000:
                     raise ConfigurationError('Configuration vide ou supérieure à 1 Mo')
-                config = loads(self.rfile.read(length).decode('utf-8'))
+                text = self.rfile.read(length).decode('utf-8')
+                if self.path.startswith('/api/canvas/'):
+                    data = parse_json(text)
+                    if self.path == '/api/canvas/submit':
+                        self.send(202, canvas_manager.submit(data['session'], data['revision'], data['configuration']))
+                    elif self.path == '/api/canvas/validate':
+                        config = upgrade(data) if data.get('version') == 1 else data
+                        compile_graph(config)
+                        self.send(200, dict(valid=True, configuration=config))
+                    elif self.path == '/api/canvas/connect':
+                        check_connections(data)
+                        self.send(200, dict(valid=True))
+                    else:
+                        self.send(404, dict(error='Ressource inconnue'))
+                    return
+                config = loads(text)
                 if self.path == '/api/run':
                     self.send(202, dict(run_id=manager.start(config)))
                 elif self.path == '/api/validate':
@@ -129,11 +158,12 @@ def make_server(port=8765, manager=None):
                     self.send(404, dict(error='Ressource inconnue'))
             except BusyError as error:
                 self.send(409, dict(error=str(error)))
-            except (ValueError, TypeError, UnicodeError) as error:
+            except (ValueError, TypeError, UnicodeError, KeyError) as error:
                 self.send(400, dict(error=str(error)))
             except Exception as error:
                 self.send(500, dict(error=str(error)))
 
     server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
     server.manager = manager
+    server.canvas_manager = canvas_manager
     return server

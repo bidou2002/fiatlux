@@ -524,3 +524,9 @@ python -m fiatlux_app
 ```
 
 See [installation, scientific conventions, examples and saved format](docs/local_gui.md).
+
+
+The editor now opens a [2D optical canvas](docs/canvas_editor.md) with typed
+connections, branched visualization boxes and automatic incremental CPU updates.
+Saved layout is independent of optical order. The initial canvas includes pupil,
+atmosphere, DM and connected phase/OPD/intensity views.

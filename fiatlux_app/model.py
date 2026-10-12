@@ -227,7 +227,7 @@ def validate(config):
     return config
 
 
-def loads(text):
+def parse_json(text):
     def reject(value):
         raise ConfigurationError(f'JSON : valeur non finie {value}')
     def pairs(entries):
@@ -238,9 +238,13 @@ def loads(text):
             output[key] = value
         return output
     try:
-        return validate(json.loads(text, parse_constant=reject, object_pairs_hook=pairs))
+        return json.loads(text, parse_constant=reject, object_pairs_hook=pairs)
     except json.JSONDecodeError as error:
         raise ConfigurationError(f'JSON ligne {error.lineno} : {error.msg}') from error
+
+
+def loads(text):
+    return validate(parse_json(text))
 
 
 def dumps(config):
