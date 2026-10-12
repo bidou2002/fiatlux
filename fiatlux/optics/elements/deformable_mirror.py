@@ -417,9 +417,18 @@ class ZernikeBasis(ControlBasis):
         modes = zernike_basis(
             nterms=self.n + 1,
             npix=self.pixel_grid.nx,
+            rho=self._polar_coordinates()[0],
+            theta=self._polar_coordinates()[1],
         ).to(device=self.pixel_grid.device, dtype=self.pixel_grid.dtype)
 
         return modes[1:, ...].flatten(1, -1).T
+
+    def _polar_coordinates(self):
+        grid = self.pixel_grid
+        axis = (torch.arange(grid.nx, device=grid.device, dtype=grid.dtype)
+                - (grid.nx - 1) / 2) / ((grid.nx - 1) / 2)
+        x, y = torch.meshgrid(axis, axis, indexing="ij")
+        return torch.hypot(x, y), torch.atan2(y, x)
 
     @property
     def n_modes(self) -> int:
@@ -599,3 +608,4 @@ class DeformableMirror(torch.nn.Module):
         plt.xlabel("x (m)")
         plt.ylabel("y (m)")
         plt.show()
+
