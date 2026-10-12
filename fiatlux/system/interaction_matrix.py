@@ -104,6 +104,11 @@ class InteractionMatrix:
 
     def _calibrate(self, *, central: bool, verbose: bool) -> torch.Tensor:
         """Run one-sided or central finite-difference calibration."""
+        self.matrix = None
+        for name in ("U", "S", "Vh", "control_matrix", "retained_mode_indices",
+                     "effective_rank", "singular_value_threshold"):
+            if hasattr(self, name):
+                delattr(self, name)
         n_commands = self.dm.commands.numel()
         columns = []
         saved_commands = self.dm.commands.detach().clone()
@@ -305,3 +310,4 @@ class InteractionMatrix:
         singular_figure = self.plot_singular_values()
         mode_figure = self.plot_modes(measurement_shape, max_modes=max_modes)
         return singular_figure, mode_figure
+
