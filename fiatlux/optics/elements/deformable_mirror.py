@@ -407,28 +407,35 @@ class FourierBasis(ControlBasis):
 @dataclass
 @register_type("ZernikeBasis")
 class ZernikeBasis(ControlBasis):
+    """Noll modes excluding piston, evaluated on physical Grid coordinates.
+
+    ``pupil_radius`` is in metres. By default it is half the smaller sampled
+    extent, ``min(nx * dx, ny * dy) / 2``. Modes vanish outside this disk.
+    x is the final array axis; positive x/y tip/tilt are Noll indices 2/3.
+    """
+
     pixel_grid: Grid
     n: int
+    pupil_radius: float | None = None
 
-    def build_command_matrix(
-        self,
-    ) -> torch.Tensor:
+    def __post_init__(self):
+        if self.pupil_radius is not None and (
+            not math.isfinite(self.pupil_radius) or self.pupil_radius <= 0
+        ):
+            raise ValueError("pupil_radius must be a positive finite length in metres.")
 
-        modes = zernike_basis(
-            nterms=self.n + 1,
-            npix=self.pixel_grid.nx,
-            rho=self._polar_coordinates()[0],
-            theta=self._polar_coordinates()[1],
-        ).to(device=self.pixel_grid.device, dtype=self.pixel_grid.dtype)
-
-        return modes[1:, ...].flatten(1, -1).T
+    def build_command_matrix(self) -> torch.Tensor:
+        rho, theta = self._polar_coordinates()
+        modes = zernike_basis(nterms=self.n + 1, rho=rho, theta=theta)
+        return modes[1:].flatten(1).T
 
     def _polar_coordinates(self):
         grid = self.pixel_grid
-        axis = (torch.arange(grid.nx, device=grid.device, dtype=grid.dtype)
-                - (grid.nx - 1) / 2) / ((grid.nx - 1) / 2)
-        x, y = torch.meshgrid(axis, axis, indexing="ij")
-        return torch.hypot(x, y), torch.atan2(y, x)
+        radius = self.pupil_radius
+        if radius is None:
+            radius = min(grid.nx * grid.dx, grid.ny * grid.dy) / 2
+        x, y = grid.meshgrid()
+        return torch.hypot(x, y) / radius, torch.atan2(y, x)
 
     @property
     def n_modes(self) -> int:

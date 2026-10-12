@@ -138,7 +138,7 @@ validation runs in float64 and reports raw errors.
 Small float32/float64 cases compare complex fields and noiseless integrated
 counts for monochromatic FFT, polychromatic MFT, Fresnel MFT and a static DM.
 Propagation cases use rectangular grids; the Zernike DM case uses a square
-grid because the current `ZernikeBasis` constructs square modes.
+grid; `ZernikeBasis` also supports rectangular and anisotropic grids.
 Diagnostics report maximum absolute, pointwise relative and RMS errors without
 renormalization. Existing tests also use opposite-phase samples to distinguish
 incoherent integration from coherent averaging.
@@ -172,3 +172,12 @@ peak allocated/reserved memory. Sampling is excluded. Input cubes and reference
 images remain resident during measurement, so memory figures include them.
 Use command-line selectors for smaller runs. Speedups are measurements, not
 performance guarantees.
+
+
+
+Zernike control modes use `Grid.meshgrid()` coordinates (x on the last axis,
+y on the penultimate axis, origin at `(ny//2, nx//2)`). `pupil_radius` specifies
+the physical disk radius in metres; the default is `min(nx*dx, ny*dy)/2`.
+Modes are zero outside this disk, with Noll ordering and piston excluded.
+For a known optical aperture, pass its radius explicitly rather than inferring
+it from padded grid dimensions.
