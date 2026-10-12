@@ -173,3 +173,16 @@ DM units, seeded turbulence, Fresnel identity, FFT sampling, concurrency and
 configuration snapshots. `Local GUI` CI publishes the screenshots as the
 `fiatlux-gui-captures` artifact. Existing Package CI continues to verify the full
 core tests, isolated import and clean-kernel tutorials.
+
+
+## Verified screenshots
+
+Captured from the real localhost application by the browser smoke, with the
+actual FIATLUX detector and DM outputs. Full desktop/mobile and polychromatic
+captures are also available in the `fiatlux-gui-captures` CI artifact.
+
+![Circular pupil and acquired Fraunhofer PSF](images/gui-01_circular.png)
+
+![Native DM OPD and coefficients in metres](images/gui-02_dm_opd.png)
+
+![ZELDA chain and acquired pupil image](images/gui-03_zelda.png)
