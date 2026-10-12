@@ -18,6 +18,11 @@ jobs:
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
           python -m pip install '.[all,dev]' playwright
           python -m playwright install --with-deps chromium
+      - name: Format the native frontend for review
+        run: |
+          npx --yes prettier@3.6.2 --write fiatlux_app/static/canvas.js fiatlux_app/static/canvas.css
+          mkdir -p gui-captures/source
+          cp fiatlux_app/static/canvas.js fiatlux_app/static/canvas.css gui-captures/source/
       - name: Verify configuration and numerical equivalence
         run: python -m pytest tests/test_gui_model.py tests/test_gui_engine.py tests/test_canvas_graph.py tests/test_canvas_engine.py tests/test_canvas_revisions.py -q
       - name: Exercise localhost with real FIATLUX results

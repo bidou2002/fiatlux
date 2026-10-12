@@ -37,7 +37,7 @@ def main():
             old_count=engine.evaluations
             head=page.locator('[data-node="dm"] .node-head').bounding_box()
             page.mouse.move(head['x']+30,head['y']+25)
-            page.mouse.down();page.mouse.move(head['x']+90,head['y']-20,steps=10);page.mouse.up()
+            page.mouse.down();page.mouse.move(head['x']+40,head['y']+105,steps=10);page.mouse.up()
             page.wait_for_timeout(600)
             assert engine.evaluations==old_count
             moved=page.evaluate('config')
@@ -49,6 +49,16 @@ def main():
             page.wait_for_timeout(500)
             assert engine.evaluations==old_count
             assert server.canvas_manager.sessions[session].result is first
+            # Invalid local limits preserve maps without a scientific submission.
+            image_revision=page.locator('[data-view="view-phase"]').get_attribute('data-revision')
+            page.locator('#view-phase-minimum').fill('2')
+            page.locator('#view-phase-maximum').fill('1')
+            expect(page.locator('#message')).to_contain_text('limite basse')
+            assert page.locator('[data-view="view-phase"]').get_attribute('data-revision')==image_revision
+            assert engine.evaluations==old_count
+            page.locator('#view-phase-minimum').fill('')
+            page.locator('#view-phase-maximum').fill('')
+            page.wait_for_function('() => !viewErrors.has("view-phase")')
             page.get_by_role('button',name='Agrandir view-phase').click()
             expect(page.locator('#expanded')).to_be_visible()
             page.screenshot(path=str(output/'02-expanded.png'),full_page=True)
