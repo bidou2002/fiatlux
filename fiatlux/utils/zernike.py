@@ -16,9 +16,9 @@ def R(n, m, rho):
 
     m = int(torch.abs(torch.as_tensor(m)))
     n = int(torch.abs(torch.as_tensor(n)))
-    output = torch.zeros(rho.shape)
+    output = torch.zeros_like(rho)
     if (n - m) % 2 != 0:
-        return 0
+        return output
     else:
         for k in range(int((n - m) / 2) + 1):
             coef = (
@@ -71,7 +71,7 @@ def zernike(
         the angle in radians.
     outside : float
         Value for pixels outside the circular aperture (rho > 1).
-        Default is `torch.nan`, but you may also find it useful for this to
+        Default is 0, but you may also find it useful for this to
         be 0.0 sometimes.
     noll_normalize : bool
         As defined in Noll et al. JOSA 1976, the Zernike definition is
@@ -81,11 +81,11 @@ def zernike(
 
     Returns
     -------
-    zern : 2D numpy array
+    zern : torch.Tensor
         Z(m,n) evaluated at each (rho, theta)
     """
-    if not n >= m:
-        raise ValueError("Zernike index m must be >= index n")
+    if not n >= abs(m):
+        raise ValueError("Zernike index n must be >= abs(m)")
     # if (n - m) % 2 != 0:
     # _log.warning("Radial polynomial is zero for these inputs: m={}, n={} "
     #             "(are you sure you wanted this Zernike?)".format(m, n))
@@ -109,41 +109,41 @@ def zernike(
     if not torch.all(torch.asarray(rho.shape == theta.shape)):
         raise ValueError("The rho and theta arrays do not have consistent shape.")
 
-    aperture = (rho <= 1).to(torch.float64)
+    aperture = (rho <= 1).to(rho.dtype)
 
     if m == 0:
         if n == 0:
             zernike_result = aperture
         else:
-            norm_coeff = torch.sqrt(torch.tensor(n + 1)) if noll_normalize else 1
+            norm_coeff = math.sqrt(n + 1) if noll_normalize else 1
             zernike_result = norm_coeff * R(n, m, rho) * aperture
     elif m > 0:
         norm_coeff = (
-            torch.sqrt(torch.tensor(2)) * torch.sqrt(torch.tensor(n + 1))
+            math.sqrt(2) * math.sqrt(n + 1)
             if noll_normalize
             else 1
         )
         zernike_result = (
             norm_coeff
             * R(n, m, rho)
-            * torch.cos(torch.abs(torch.as_tensor(m)) * theta)
+            * torch.cos(abs(m) * theta)
             * aperture
         )
     else:
         norm_coeff = (
-            torch.sqrt(torch.tensor(2)) * torch.sqrt(torch.tensor(n + 1))
+            math.sqrt(2) * math.sqrt(n + 1)
             if noll_normalize
             else 1
         )
         zernike_result = (
             norm_coeff
             * R(n, m, rho)
-            * torch.sin(torch.abs(torch.as_tensor(m)) * theta)
+            * torch.sin(abs(m) * theta)
             * aperture
         )
 
     zernike_result[(rho > 1)] = outside
-    return zernike_result / torch.var(zernike_result[rho <= 1] ** 2) ** 0.5
+    return zernike_result
 
 
 def noll_indices(j):
@@ -213,7 +213,7 @@ def zernike1(j, **kwargs):
 
     Returns
     -------
-    zern : 2D numpy array
+    zern : torch.Tensor
         Z_j evaluated at each (rho, theta)
     """
     n, m = noll_indices(j)
@@ -257,12 +257,13 @@ def zernike_basis(nterms=15, npix=512, rho=None, theta=None, **kwargs):
         shape = (npix, npix)
         use_polar = False
 
-    zern_output = torch.zeros((nterms,) + shape)
+    modes = []
 
     if use_polar:
         for j in range(nterms):
-            zern_output[j] = zernike1(j + 1, rho=rho, theta=theta, **kwargs)
+            modes.append(zernike1(j + 1, rho=rho, theta=theta, **kwargs))
     else:
         for j in range(nterms):
-            zern_output[j] = zernike1(j + 1, npix=npix, **kwargs)
-    return zern_output
+            modes.append(zernike1(j + 1, npix=npix, **kwargs))
+    return torch.stack(modes)
+
