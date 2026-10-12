@@ -184,3 +184,33 @@ def test_dark_current_is_a_rate_per_pixel_and_read_noise_uses_variance():
 def test_invalid_physical_detector_parameters_are_rejected(kwargs):
     with pytest.raises(ValueError):
         make_detector(**kwargs)
+
+
+
+@pytest.mark.parametrize("parameter", ["exposure_time", "dark_current",
+                                      "readout_noise_variance", "quantum_efficiency", "sensitivity"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
+def test_detector_rejects_nonfinite_configuration(parameter, value):
+    with pytest.raises(ValueError, match=parameter):
+        Detector(Grid(2, 2, .1, .1), **{parameter: value})
+
+
+@pytest.mark.parametrize("sensitivity", [0, -1])
+def test_detector_requires_positive_conversion_gain(sensitivity):
+    with pytest.raises(ValueError, match="sensitivity"):
+        Detector(Grid(2, 2, .1, .1), sensitivity=sensitivity)
+
+
+@pytest.mark.parametrize("offset", [1.5, float("nan"), float("inf"), True])
+def test_detector_requires_integer_offset(offset):
+    with pytest.raises(ValueError, match="offset"):
+        Detector(Grid(2, 2, .1, .1), offset=offset)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_gain_and_signed_offset_preserve_adc_semantics(dtype):
+    detector = Detector(Grid(2, 2, .1, .1, dtype=dtype), sensitivity=2.5,
+                        offset=-2, bitdepth=8)
+    electrons = torch.tensor([0., 1., 4., 1000.], dtype=dtype)
+    torch.testing.assert_close(detector.electrons_to_adus(electrons),
+                               torch.tensor([0, 0, 8, 255]))
