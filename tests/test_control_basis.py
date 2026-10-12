@@ -127,3 +127,27 @@ def test_orthogonalized_basis_preserves_dm_command_autograd():
 
     assert dm.commands.grad is not None
     assert torch.isfinite(dm.commands.grad).all()
+
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("device", ["cpu"] + (["cuda"] if torch.cuda.is_available() else []))
+@pytest.mark.parametrize("kind", ["imaginary", "apodized", "bool"])
+def test_orthogonalization_uses_phase_invariant_intensity(dtype, device, kind):
+    grid = Grid(2, 2, .1, .1, dtype=dtype, device=device)
+    amplitude = torch.ones(grid.shape, dtype=dtype, device=device)
+    if kind == "apodized":
+        amplitude[0, 1] = .5
+    transmission = (amplitude.bool() if kind == "bool" else 1j * amplitude)
+    # Exercise native complex/bool transmissions, without a mask conversion.
+    pupil = DummyPupil(grid)
+    pupil.grid = grid
+    pupil.transmission = transmission
+    matrix = PupilOrthogonalizedBasis(NonOrthogonalBasis(grid), pupil).build_command_matrix()
+    weights = amplitude.square().flatten()
+    weights = weights / weights.sum()
+    gram = matrix.mT @ (weights[:, None] * matrix)
+    torch.testing.assert_close(gram, torch.eye(2, device=device, dtype=dtype))
+    pupil.transmission = amplitude
+    real_matrix = PupilOrthogonalizedBasis(NonOrthogonalBasis(grid), pupil).build_command_matrix()
+    torch.testing.assert_close(matrix, real_matrix)

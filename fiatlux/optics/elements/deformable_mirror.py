@@ -119,14 +119,14 @@ class PupilOrthogonalizedBasis(ControlBasis):
                 "The pupil transmission must have spatial shape "
                 f"{self.pixel_grid.shape}; got {tuple(transmission.shape)}."
             )
-        transmission = transmission.to(
-            device=command_matrix.device,
-            dtype=command_matrix.dtype,
-        )
+        if transmission.dtype == torch.bool:
+            transmission = transmission.to(dtype=command_matrix.dtype)
         if not torch.isfinite(transmission).all():
             raise ValueError("The pupil transmission must contain only finite values.")
 
-        weights = transmission.abs().square().flatten()
+        weights = transmission.abs().square().to(
+            device=command_matrix.device, dtype=command_matrix.dtype
+        ).flatten()
         weight_sum = weights.sum()
         if not bool(weight_sum > 0):
             raise ValueError("The pupil must contain non-zero transmitted intensity.")
