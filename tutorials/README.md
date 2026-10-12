@@ -27,3 +27,26 @@ consistency.
     Requires the optional `tiptop` extra; runs in a dedicated CI job.
 15. `14_pupil_orthogonal_control_basis.ipynb` — Zernike Gram matrices on
     circular and ELT pupils, plus pupil-weighted ELT reorthogonalization.
+
+16. [`15_slm_matching_simulated_bench.ipynb`](15_slm_matching_simulated_bench.ipynb) —
+    Simulated reference DM, phase SLM, interferometric pupil camera and focal camera.
+    Push-pull acquisition, centroid measurements, affine matching, camera/SLM
+    coordinate composition, nonlinear phase LUT, before/after phase and PSF
+    validation, and calibration serialization. CPU-only; no hardware or data files.
+
+Run from the repository root:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[tutorials]'
+jupyter lab tutorials/15_slm_matching_simulated_bench.ipynb
+```
+
+For non-interactive validation:
+
+```bash
+jupyter nbconvert --to notebook --execute \
+  tutorials/15_slm_matching_simulated_bench.ipynb \
+  --output-dir /tmp/fiatlux-executed --ExecutePreprocessor.timeout=300
+```
