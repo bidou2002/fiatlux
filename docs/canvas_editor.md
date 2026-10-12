@@ -159,3 +159,18 @@ compare connected outputs with native direct Python chains, validate cached
 operator reconstruction, latent selection, exact atmospheric preservation and
 latest-revision publication under controlled overlapping work. Existing v1,
 core-import, full pytest and clean-kernel tutorial CI checks remain active.
+
+
+## Verified views
+
+These screenshots were captured from actual localhost FIATLUX simulations, not
+synthetic map data. They were visually inspected together with the mobile,
+invalid-input and displaced-node views in the CI artifact. Browser verification
+also delays a genuine old HTTP response and confirms it cannot replace a newer
+published native result.
+
+![Initial connected optical chain with native phase, OPD and intensity](images/canvas-01-canvas.png)
+
+![Enlarged native atmospheric phase with physical coordinates and units](images/canvas-02-expanded.png)
+
+![Free layout and tooltip with parameters, grid, spectrum and revision](images/canvas-04-tooltip.png)
