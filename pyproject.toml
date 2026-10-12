@@ -29,6 +29,9 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Physics",
 ]
 
+[project.scripts]
+fiatlux-gui = "fiatlux_app.__main__:main"
+
 [project.urls]
 Homepage = "https://github.com/bidou2002/fiatlux"
 Repository = "https://github.com/bidou2002/fiatlux"
@@ -66,3 +69,7 @@ exclude = ["fiatlux.legacy*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+
+[tool.setuptools.package-data]
+fiatlux_app = ["static/*.html", "static/*.css", "static/*.js", "examples/*.json"]
