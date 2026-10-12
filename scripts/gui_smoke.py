@@ -44,6 +44,7 @@ def main():
                 assert image['unit'] == 'e⁻/pixel'
                 page.screenshot(path=str(output / f'{key}.png'), full_page=True)
                 if key == '02_elt_dm':
+                    page.get_by_role('button', name='Sélectionner Miroir déformable · Zernike · dm').click()
                     page.locator('#stage').select_option('2')
                     page.locator('#quantity').select_option('opd')
                     expect(page.locator('#image-unit')).to_have_text('nm')
@@ -61,6 +62,38 @@ def main():
                 assert json.loads(saved.read_text()) == config
                 page.locator('#file').set_input_files(saved)
                 expect(page.locator('#result-state')).to_have_text('Résultats périmés')
+            # Three real spectral channels; detector remains integrated.
+            page.locator('#examples').select_option('01_circular')
+            page.locator('#system-tab').click()
+            page.locator('#spectrum-samples').fill('3')
+            page.locator('#spectrum-samples').dispatch_event('change')
+            page.locator('#spectrum-delta_wavelength').fill('1e-7')
+            page.locator('#spectrum-delta_wavelength').dispatch_event('change')
+            page.locator('#run').click()
+            expect(page.locator('#result-state')).to_have_text('À jour', timeout=120000)
+            expect(page.locator('#image')).to_have_attribute('data-run', server.manager.run_id)
+            assert page.locator('#channel option:disabled').count() == 3
+            page.locator('#stage').select_option('2')
+            page.locator('#channel').select_option('1')
+            expect(page.locator('#image-unit')).to_have_text('photons/s/m²')
+            page.locator('#log').click()
+            page.screenshot(path=str(output/'polychromatic.png'), full_page=True)
+            page.locator('#quantity').select_option('phase')
+            expect(page.locator('#image-unit')).to_have_text('rad')
+            page.locator('#quantity').select_option('intensity')
+            page.locator('#linear').click()
+            # Invalid unparsed inputs must never execute the previous valid value.
+            page.locator('#examples').select_option('02_elt_dm')
+            page.get_by_role('button', name='Sélectionner Miroir déformable · Zernike · dm').click()
+            page.locator('#dm-commands').fill('[invalid]')
+            page.locator('#dm-commands').dispatch_event('change')
+            previous_run = server.manager.run_id
+            page.locator('#run').click()
+            expect(page.locator('#message')).to_contain_text('dm')
+            assert server.manager.run_id == previous_run
+            page.locator('#system-tab').click()
+            page.locator('#block-tab').click()
+            expect(page.locator('#dm-commands')).to_have_value('[invalid]')
             # Parameter edits, reorder and invalid configuration retain user data.
             page.locator('#examples').select_option('01_circular')
             page.get_by_role('button', name='Sélectionner Pupille circulaire · pupil').click()

@@ -3,33 +3,38 @@ const $ = id => document.getElementById(id);
 let catalog, presets, config, selected, revision = 0, tab = 'block', running = false;
 let result = null, resultRevision = -1, runId = null, picture = null, scale = 'linear', imageRequest = 0;
 let dragIndex = null;
+const invalidInputs = new Map();
+
+function requireValidInputs() {
+  if (invalidInputs.size) throw new Error(invalidInputs.values().next().value.error);
+}
 const clone = value => JSON.parse(JSON.stringify(value));
 const element = (tag, text, className) => {
   const node = document.createElement(tag);
   if (text !== undefined) node.textContent = text;
   if (className) node.className = className;
   return node;
-}
-;
+};
+
 function message(text, error = false) {
   $('message').hidden = !text;
   $('message').textContent = text || '';
   $('message').classList.toggle('error', error);
 }
+
 async function api(path, body) {
   const response = await fetch(path, body === undefined ? {
   }
   : {
     method: 'POST', headers: {
       'Content-Type': 'application/json'
-    }
-    , body: JSON.stringify(body)
-  }
-  );
+    }, body: JSON.stringify(body)
+  });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'Erreur du serveur');
   return data;
 }
+
 function changed() {
   revision++;
   if (config) {
@@ -41,6 +46,7 @@ function changed() {
   }
   updateBadge();
 }
+
 function updateBadge() {
   const node = $('result-state');
   node.className = 'badge';
@@ -58,6 +64,7 @@ function updateBadge() {
   }
   else node.textContent = 'En attente';
 }
+
 function blockDetail(block) {
   const p = block.params;
   if (block.type === 'PlaneWave') return `${(config.spectrum.central_wavelength * 1e9).toFixed(0)} nm · ${config.spectrum.samples} λ`;
@@ -66,6 +73,7 @@ function blockDetail(block) {
   if (block.type === 'Detector') return `${p.exposure_time} s · ${p.digitize ? 'ADU' : 'électrons'}`;
   return `Plan ${p.grid}`;
 }
+
 function renderChain() {
   const container = $('chain');
   container.replaceChildren();
@@ -86,37 +94,32 @@ function renderChain() {
       tab = 'block';
       renderChain();
       renderParameters();
-    }
-    ;
+    };
     card.onclick = select;
     card.onkeydown = event => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         select();
       }
-    }
-    ;
+    };
     card.ondragstart = () => {
       dragIndex = index;
       card.classList.add('dragging');
-    }
-    ;
+    };
     card.ondragend = () => {
       dragIndex = null;
       card.classList.remove('dragging');
-    }
-    ;
+    };
     card.ondragover = event => event.preventDefault();
     card.ondrop = event => {
       event.preventDefault();
       if (dragIndex !== null && dragIndex !== index) move(dragIndex,index);
-    }
-    ;
+    };
     node.append(card);
     container.append(node);
-  }
-  );
+  });
 }
+
 function move(from, to) {
   if (to < 0 || to >= config.blocks.length) return;
   const [block] = config.blocks.splice(from,1);
@@ -125,6 +128,7 @@ function move(from, to) {
   renderChain();
   renderParameters();
 }
+
 function renderLibrary() {
   const container = $('library');
   container.replaceChildren();
@@ -141,8 +145,7 @@ function renderLibrary() {
     button.onclick = () => {
       const block = {
         id: `${kind.toLowerCase()}-${Date.now().toString(36)}`, type: kind, params: Object.fromEntries(Object.entries(info.fields).map(([key, field]) => [key,clone(field.default)]))
-      }
-      ;
+      };
       let index = config.blocks.findIndex(b => b.type === 'Detector');
       if (kind === 'PlaneWave') index = 0;
       if (kind === 'Detector' || index < 0) index = config.blocks.length;
@@ -152,11 +155,11 @@ function renderLibrary() {
       changed();
       renderChain();
       renderParameters();
-    }
-    ;
+    };
     container.append(button);
   }
 }
+
 function field(parent, key, rule, object, prefix) {
   const wrap = element('div',undefined,'field');
   const label = element('label',rule.label);
@@ -191,6 +194,7 @@ function field(parent, key, rule, object, prefix) {
     }
   }
   input.id = id;
+  if (invalidInputs.has(id)) input.value = invalidInputs.get(id).text;
   input.onchange = () => {
     try {
       let value;
@@ -205,19 +209,22 @@ function field(parent, key, rule, object, prefix) {
         value = input.value === '' ? NaN : Number(input.value);
         if (!Number.isFinite(value)) throw new Error(`${rule.label} : nombre fini requis`);
       }
+      invalidInputs.delete(id);
       object[key] = value;
       changed();
       renderChain();
       message('');
     }
     catch (error) {
-      message(error.message,true);
+      invalidInputs.set(id, {text: input.value, error: `${prefix} : ${error.message}`});
+      changed();
+      message(`${prefix} : ${error.message}`,true);
     }
-  }
-  ;
+  };
   wrap.append(label,input);
   parent.append(wrap);
 }
+
 function renderParameters() {
   $('block-tab').classList.toggle('active',tab === 'block');
   $('system-tab').classList.toggle('active',tab === 'system');
@@ -238,29 +245,23 @@ function renderParameters() {
     select.onchange = () => {
       config.precision = select.value;
       changed();
-    }
-    ;
+    };
     precision.append(label,select);
     parent.append(precision);
     parent.append(element('div','SPECTRE · BANDE PHOTOMÉTRIQUE','section-label'));
     const rules = {
       central_wavelength: {
         label:'Longueur d’onde centrale',unit:'m'
-      }
-      , delta_wavelength:{
+      }, delta_wavelength:{
         label:'Largeur de bande',unit:'m'
-      }
-      , f0:{
+      }, f0:{
         label:'Flux zéro de la bande',unit:'convention Band.f0'
-      }
-      , magnitude:{
+      }, magnitude:{
         label:'Magnitude',unit:'mag'
-      }
-      , samples:{
+      }, samples:{
         label:'Canaux spectraux',kind:'integer',minimum:1,maximum:8
       }
-    }
-    ;
+    };
     for (const [key, rule] of Object.entries(rules)) field(parent,key,rule,config.spectrum,'spectrum');
     for (const [name, grid] of Object.entries(config.grids)) {
       parent.append(element('div',`GRILLE ${name.toUpperCase()}`,'section-label'));
@@ -269,8 +270,7 @@ function renderParameters() {
           nx:'Pixels x',ny:'Pixels y',dx:'Pas spatial x',dy:'Pas spatial y'
         }
         [key],kind:key[0] === 'n' ? 'integer':'number',unit:key[0] === 'n' ? 'pixels':'m'
-      }
-      ,grid,name);
+      },grid,name);
     }
     parent.append(element('p','Les coordonnées utilisent (index − taille // 2) × pas. Les grilles référencées par les blocs doivent être compatibles ; aucune correction automatique.','parameter-note'));
     return;
@@ -287,13 +287,13 @@ function renderParameters() {
   for (const [key, rule] of Object.entries(info.fields)) field(parent,key,rule,block.params,block.id);
   const notes = {
     PlaneWave:'Le spectre est réglable dans « Grilles & spectre ». Le flux est normalisé par PlaneWave selon la convention FIATLUX.',DeformableMirror:'Coefficients en mètres de chemin optique (OPD), Noll 2… avec piston exclu. Le moteur fournit la base Zernike native, actuellement carrée isotrope. Pas de conversion en déplacement mécanique.',FFTPropagator:'Un seul canal spectral. La grille de sortie naturelle est λ × |f ou z| / (N × pas d’entrée). Définissez explicitement cette grille pour les éléments suivants.',MFTPropagator:'Fraunhofer par défaut. Pour Fresnel, renseignez distance et videz focale. À distance zéro, la grille de sortie doit être identique.',ELTHarmoniPupil:'Pupille analytique, sans FITS. Les exemples CPU sont sous-échantillonnés : ils ne résolvent pas les espacements millimétriques des segments.',Kolmogorov:'Un écran OPD reproductible avec graine fixée. Échelle externe vide : Kolmogorov pur ; piston retiré.'
-  }
-  ;
+  };
   if (notes[block.type]) parent.append(element('p',notes[block.type],'parameter-note'));
   const controls = element('div',undefined,'block-actions');
   const index = config.blocks.indexOf(block);
   for (const [text,action] of [['← Avant',()=>move(index,index-1)],['Après →',()=>move(index,index+1)],['Supprimer',()=>{
     config.blocks.splice(index,1);
+      for (const key of invalidInputs.keys()) if (key.startsWith(`${block.id}-`)) invalidInputs.delete(key);
     selected=config.blocks[Math.max(0,index-1)]?.id;
     changed();
     renderChain();
@@ -308,7 +308,9 @@ function renderParameters() {
   }
   parent.append(controls);
 }
+
 function setConfig(next) {
+  invalidInputs.clear();
   config = clone(next);
   selected = config.blocks[1]?.id || config.blocks[0]?.id;
   $('project-name').value = config.name;
@@ -316,6 +318,7 @@ function setConfig(next) {
   renderChain();
   renderParameters();
 }
+
 function populateResults() {
   const stage = $('stage');
   stage.replaceChildren();
@@ -323,8 +326,7 @@ function populateResults() {
     const option = element('option',`${String(index+1).padStart(2,'0')} · ${catalog[config.blocks.find(b=>b.id === step.id)?.type]?.label || step.label}`);
     option.value = index;
     stage.append(option);
-  }
-  );
+  });
   stage.value = result.steps.length-1;
   stage.disabled = false;
   const channel = $('channel');
@@ -336,13 +338,13 @@ function populateResults() {
     const option = element('option',`${(lambda*1e9).toFixed(2)} nm`);
     option.value = index;
     channel.append(option);
-  }
-  );
+  });
   channel.disabled = false;
   $('quantity').disabled = false;
   $('quantity').value = 'intensity';
   adaptView();
 }
+
 function adaptView() {
   if (!result) return;
   const step = result.steps[Number($('stage').value)];
@@ -361,17 +363,18 @@ function adaptView() {
   updateScale();
   fetchImage();
 }
+
 function updateScale() {
   $('linear').classList.toggle('active',scale === 'linear');
   $('log').classList.toggle('active',scale === 'log');
 }
+
 async function fetchImage() {
   if (!result || running) return;
   const request = ++imageRequest;
   const params = new URLSearchParams({
     run:runId,step:$('stage').value,quantity:$('quantity').value,channel:$('channel').value,opd_unit:$('opd-unit').value
-  }
-  );
+  });
   try {
     const data = await api(`/api/image?${params}`);
     if (request !== imageRequest) return;
@@ -388,6 +391,7 @@ async function fetchImage() {
     if (request === imageRequest) message(error.message,true);
   }
 }
+
 function draw() {
   if (!picture) return;
   const canvas = $('image');
@@ -400,7 +404,7 @@ function draw() {
   ctx.fillStyle='#f2f3eb';
   ctx.fillRect(0,0,w,h);
   const left=62,right=54,top=18,bottom=44;
-  const ratio=picture.nx/picture.ny;
+  const ratio = picture.nx * (picture.x[1]-picture.x[0]) / (picture.ny * (picture.y[1]-picture.y[0]));
   let pw=w-left-right,ph=h-top-bottom;
   if (pw/ph > ratio) pw=ph*ratio;
   else ph=pw/ratio;
@@ -477,8 +481,7 @@ function draw() {
   ctx.fillText('min',gx+12,py+ph);
   canvas.plotBounds={
     px,py,pw,ph
-  }
-  ;
+  };
 }
 $('image').onmousemove=event=>{
   if(!picture)return;
@@ -487,10 +490,10 @@ $('image').onmousemove=event=>{
   const rect=$('image').getBoundingClientRect();
   const x=Math.floor((event.clientX-rect.left-bounds.px)/bounds.pw*picture.nx),y=picture.ny-1-Math.floor((event.clientY-rect.top-bounds.py)/bounds.ph*picture.ny);
   if(x>=0&&x<picture.nx&&y>=0&&y<picture.ny)$('coordinates').textContent=`x ${picture.x[x].toExponential(3)} m · y ${picture.y[y].toExponential(3)} m · ${picture.values[y][x].toExponential(3)} ${picture.unit}`;
-}
-;
+};
 $('run').onclick=async()=>{
   if(running)return;
+  try { requireValidInputs(); } catch (error) { message(error.message, true); return; }
   running=true;
   const snapshot=clone(config),atRevision=revision;
 
@@ -529,18 +532,17 @@ $('run').onclick=async()=>{
     $('run').textContent='▶ Lancer la simulation';
     updateBadge();
   }
-}
-;
+};
 $('validate').onclick=async()=>{
   try{
+    requireValidInputs();
     await api('/api/validate',config);
     message('Configuration compatible : paramètres, spectre et grilles vérifiés.');
   }
   catch(error){
     message(error.message,true);
   }
-}
-;
+};
 $('open').onclick=()=>$('file').click();
 $('file').onchange=async()=>{
   const file=$('file').files[0];
@@ -551,10 +553,8 @@ $('file').onchange=async()=>{
     const response=await fetch('/api/validate',{
       method:'POST',headers:{
         'Content-Type':'application/json'
-      }
-      ,body:text
-    }
-    );
+      },body:text
+    });
     const data=await response.json();
     if(!response.ok)throw new Error(data.error);
     setConfig(JSON.parse(text));
@@ -566,15 +566,14 @@ $('file').onchange=async()=>{
   finally{
     $('file').value='';
   }
-}
-;
+};
 $('save').onclick=async()=>{
   try{
+    requireValidInputs();
     await api('/api/validate',config);
     const blob=new Blob([JSON.stringify(config,null,2)+'\n'],{
       type:'application/json'
-    }
-    );
+    });
     const url=URL.createObjectURL(blob);
     const a=element('a');
     a.href=url;
@@ -586,24 +585,20 @@ $('save').onclick=async()=>{
   catch(error){
     message(error.message,true);
   }
-}
-;
+};
 $('project-name').onchange=()=>{
   config.name=$('project-name').value;
   changed();
-}
-;
+};
 $('search').oninput=renderLibrary;
 $('block-tab').onclick=()=>{
   tab='block';
   renderParameters();
-}
-;
+};
 $('system-tab').onclick=()=>{
   tab='system';
   renderParameters();
-}
-;
+};
 $('stage').onchange=adaptView;
 $('quantity').onchange=adaptView;
 $('channel').onchange=fetchImage;
@@ -612,14 +607,12 @@ $('linear').onclick=()=>{
   scale='linear';
   updateScale();
   draw();
-}
-;
+};
 $('log').onclick=()=>{
   scale='log';
   updateScale();
   draw();
-}
-;
+};
 new ResizeObserver(draw).observe($('plot'));
 (async()=>{
   try{
@@ -648,12 +641,10 @@ new ResizeObserver(draw).observe($('plot'));
     $('examples').onchange=()=>{
       setConfig(presets[$('examples').value]);
       message('Exemple chargé. Lancez la simulation pour recalculer.');
-    }
-    ;
+    };
   }
   catch(error){
     message(`Initialisation : ${error.message}`,true);
     $('run').disabled=true;
   }
-}
-)();
+})();
