@@ -15,6 +15,7 @@ from fiatlux.optics.elements.deformable_mirror import (
     ZernikeBasis,
 )
 from fiatlux.optics.elements.mask import ArbitraryAperture
+from fiatlux.optics.elements.segmented_aperture import ELTHarmoniPupil
 
 
 class DummyPupil:
@@ -151,3 +152,54 @@ def test_orthogonalization_uses_phase_invariant_intensity(dtype, device, kind):
     pupil.transmission = amplitude
     real_matrix = PupilOrthogonalizedBasis(NonOrthogonalBasis(grid), pupil).build_command_matrix()
     torch.testing.assert_close(matrix, real_matrix)
+
+
+def test_orthogonalization_reports_gram_overflow_before_eigendecomposition():
+    grid = Grid(2, 2, .1, .1)
+    pupil = build_pupil(grid, torch.ones(grid.shape))
+
+    class OverflowingBasis(NonOrthogonalBasis):
+        def build_command_matrix(self):
+            return 1e30 * super().build_command_matrix()
+
+    with pytest.raises(ValueError, match="Numerical failure.*Gram matrix.*non-finite"):
+        PupilOrthogonalizedBasis(OverflowingBasis(grid), pupil).build_command_matrix()
+
+
+@pytest.mark.parametrize("component", ["values", "vectors"])
+@pytest.mark.parametrize("nonfinite", [float('nan'), float('inf'), -float('inf')])
+def test_orthogonalization_reports_nonfinite_eigendecomposition(monkeypatch, component, nonfinite):
+    grid = Grid(2, 2, .1, .1)
+    pupil = build_pupil(grid, torch.ones(grid.shape))
+    values, vectors = torch.ones(2), torch.eye(2)
+    (values if component == "values" else vectors).flatten()[0] = nonfinite
+    monkeypatch.setattr(torch.linalg, "eigh", lambda _: (values, vectors))
+    with pytest.raises(ValueError, match="Numerical failure.*eigendecomposition.*non-finite"):
+        PupilOrthogonalizedBasis(NonOrthogonalBasis(grid), pupil).build_command_matrix()
+
+
+def test_orthogonalization_reports_eigensolver_failure(monkeypatch):
+    grid = Grid(2, 2, .1, .1)
+    pupil = build_pupil(grid, torch.ones(grid.shape))
+
+    def fail(_):
+        raise torch.linalg.LinAlgError("did not converge")
+
+    monkeypatch.setattr(torch.linalg, "eigh", fail)
+    with pytest.raises(ValueError, match="Numerical failure.*did not converge"):
+        PupilOrthogonalizedBasis(NonOrthogonalBasis(grid), pupil).build_command_matrix()
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_elt_orthogonalization_error_for_resolved_control_subspace(dtype):
+    grid = Grid(128, 128, 40/128, 40/128, dtype=dtype)
+    pupil = ELTHarmoniPupil(grid)
+    pupil.build(Spectrum(0, Band(1e-6, 0., 1.), 1, dtype=dtype))
+    count = 120
+    matrix = PupilOrthogonalizedBasis(ZernikeBasis(grid, count), pupil).build_command_matrix()
+    weights = pupil.transmission.square().flatten().double()
+    weights /= weights.sum()
+    error = matrix.double().mT @ (weights[:, None]*matrix.double()) - torch.eye(count, dtype=torch.float64)
+    tolerance = 1e-5 if dtype == torch.float32 else 1e-13
+    assert float(error.abs().max()) < tolerance
+    assert matrix.dtype == dtype and matrix.device == grid.device
