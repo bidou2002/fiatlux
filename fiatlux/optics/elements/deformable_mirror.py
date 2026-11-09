@@ -60,9 +60,17 @@ class PupilOrthogonalizedBasis(ControlBasis):
 
     The returned modes span the same space as the wrapped basis and satisfy
     ``B.T @ W @ B = I``, where ``W`` is the normalized pupil intensity
-    ``abs(transmission)**2``.  Symmetric Loewdin orthogonalization is used so
-    that the result remains as close as possible to the original modes while
-    preserving their ordering.
+    ``abs(transmission)**2``. Symmetric Loewdin orthogonalization is computed
+    from the direct SVD of ``sqrt(W) @ B`` on positive-weight pixels, without
+    forming a Gram matrix. All requested modes are kept or an error is raised.
+
+    ``rcond_on="gram"`` preserves the historical cutoff: ``rcond`` is relative
+    to Gram eigenvalues, with default ``eps(dtype) * n_modes``. Equivalently,
+    singular values must exceed ``sqrt(rcond) * sigma_max``. For a direct-SVD
+    rank criterion, explicitly use ``rcond_on="singular_values"``: ``rcond``
+    then applies to singular values, with default
+    ``eps(dtype) * max(n_positive_pixels, n_modes)``. These are different
+    numerical rank policies, not interchangeable values of the same cutoff.
 
     The pupil must be built before the command matrix is requested.  Bases
     that lose rank on the illuminated support are rejected explicitly because
@@ -72,6 +80,7 @@ class PupilOrthogonalizedBasis(ControlBasis):
     basis: ControlBasis
     pupil: Mask
     rcond: float | None = None
+    rcond_on: str = "gram"
 
     def __post_init__(self) -> None:
         if not hasattr(self.basis, "pixel_grid"):
@@ -82,6 +91,8 @@ class PupilOrthogonalizedBasis(ControlBasis):
             not math.isfinite(self.rcond) or not 0 <= self.rcond < 1
         ):
             raise ValueError("rcond must be finite in [0, 1), or None.")
+        if self.rcond_on not in ("gram", "singular_values"):
+            raise ValueError("rcond_on must be 'gram' or 'singular_values'.")
 
     @property
     def pixel_grid(self) -> Grid:
@@ -95,8 +106,12 @@ class PupilOrthogonalizedBasis(ControlBasis):
     def n_modes(self) -> int:
         return self.basis.n_modes
 
-    def build_command_matrix(self) -> torch.Tensor:
+    def _weighted_svd(self):
         command_matrix = self.basis.build_command_matrix()
+        if command_matrix.dtype not in (torch.float32, torch.float64):
+            raise ValueError("Pupil orthogonalization supports real float32 and float64 bases.")
+        if self.n_modes < 1:
+            raise ValueError("Pupil orthogonalization requires at least one control mode.")
         expected_shape = (
             self.pixel_grid.ny * self.pixel_grid.nx,
             self.n_modes,
@@ -128,54 +143,140 @@ class PupilOrthogonalizedBasis(ControlBasis):
             device=command_matrix.device, dtype=command_matrix.dtype
         ).flatten()
         weight_sum = weights.sum()
+        if not torch.isfinite(weights).all() or not torch.isfinite(weight_sum):
+            raise ValueError("Numerical failure: pupil intensity weights are non-finite.")
         if not bool(weight_sum > 0):
             raise ValueError("The pupil must contain non-zero transmitted intensity.")
         weights = weights / weight_sum
-
-        gram = command_matrix.mT @ (weights[:, None] * command_matrix)
-        gram = 0.5 * (gram + gram.mT)
-        if not torch.isfinite(gram).all():
+        positive = weights > 0
+        weighted = command_matrix[positive] * weights[positive, None].sqrt()
+        if not torch.isfinite(weighted).all():
             raise ValueError(
-                "Numerical failure in pupil orthogonalization: the Gram matrix "
-                "contains non-finite values. Check basis evaluation and precision; "
+                "Numerical failure in pupil orthogonalization: the weighted basis "
+                "contains non-finite values; "
                 "a rank cannot be determined."
             )
         try:
-            eigenvalues, eigenvectors = torch.linalg.eigh(gram)
+            # Use the accuracy-oriented CUDA driver for ill-conditioned bases.
+            # The driver option is specific to cuSOLVER, not the ROCm backend.
+            options = {"driver": "gesvd"} if (
+                weighted.device.type == "cuda" and torch.version.hip is None
+            ) else {}
+            u, singular_values, vh = torch.linalg.svd(
+                weighted, full_matrices=weighted.shape[0] < self.n_modes, **options
+            )
         except torch.linalg.LinAlgError as error:
             raise ValueError(
-                "Numerical failure in pupil orthogonalization: the Gram "
-                "eigendecomposition did not converge; a rank cannot be determined."
+                "Numerical failure in pupil orthogonalization: the weighted SVD "
+                "did not converge; a rank cannot be determined."
             ) from error
-        if not torch.isfinite(eigenvalues).all() or not torch.isfinite(eigenvectors).all():
+        if not all(torch.isfinite(part).all() for part in (u, singular_values, vh)):
             raise ValueError(
-                "Numerical failure in pupil orthogonalization: the Gram "
-                "eigendecomposition returned non-finite values; "
+                "Numerical failure in pupil orthogonalization: the weighted SVD "
+                "returned non-finite values; "
                 "a rank cannot be determined."
             )
-        largest = eigenvalues[-1]
-        default_rcond = torch.finfo(command_matrix.dtype).eps * self.n_modes
-        threshold = largest * (
-            default_rcond if self.rcond is None else self.rcond
+        # Complete the spectrum for a wide matrix. Its missing right singular
+        # vectors are exact null directions and must also appear in diagnostics.
+        if singular_values.numel() < self.n_modes:
+            singular_values = torch.cat((singular_values, singular_values.new_zeros(
+                self.n_modes - singular_values.numel()
+            )))
+        return command_matrix, weights, positive, u, singular_values, vh
+
+    def _rank_diagnostics(self, weights, singular_values, vh):
+        positive_pixels = int(torch.count_nonzero(weights).item())
+        default_scale = (
+            self.n_modes if self.rcond_on == "gram"
+            else max(positive_pixels, self.n_modes)
         )
-        retained = eigenvalues > threshold
-        rank = int(retained.sum().item())
-        if rank != self.n_modes:
+        relative_cutoff = (
+            torch.finfo(singular_values.dtype).eps * default_scale
+            if self.rcond is None else self.rcond
+        )
+        singular_cutoff = (
+            math.sqrt(relative_cutoff) if self.rcond_on == "gram" else relative_cutoff
+        )
+        threshold = singular_values[0] * singular_cutoff
+        retained = singular_values > threshold
+        return {
+            "rcond_on": self.rcond_on,
+            "relative_cutoff": relative_cutoff,
+            "relative_singular_cutoff": singular_cutoff,
+            "singular_value_threshold": float(threshold),
+            "rank": int(retained.sum().item()),
+            "n_modes": self.n_modes,
+            "positive_pixels": positive_pixels,
+            "sigma_min_over_max": float(singular_values[-1] / singular_values[0])
+            if bool(singular_values[0] > 0) else 0.0,
+            "singular_values": singular_values.detach(),
+            # Row i contains the original-mode coefficients of direction i.
+            "right_singular_vectors": vh.detach(),
+            "retained": retained.detach(),
+        }
+
+    def diagnose(self, *, compare_gram: bool = False) -> dict:
+        """Return the SVD spectrum, rank policy and original-mode combinations.
+
+        Tensors stay on the basis device. Rows of ``right_singular_vectors``
+        correspond to descending ``singular_values``. No modes are removed;
+        diagnosis also succeeds for a finite rank-deficient basis. Setting
+        ``compare_gram=True`` additionally evaluates the Gram eigenspectrum at
+        the equivalent cutoff. Gram numerical failures are reported separately.
+        This method recomputes the decomposition; it does not cache stale pupils.
+        """
+        matrix, weights, _, _, singular_values, vh = self._weighted_svd()
+        report = self._rank_diagnostics(weights, singular_values, vh)
+        if compare_gram:
+            gram = matrix.mT @ (weights[:, None] * matrix)
+            gram = (gram + gram.mT) * 0.5
+            if not torch.isfinite(gram).all():
+                report["gram_failure"] = "Gram matrix contains non-finite values."
+                return report
+            try:
+                eigenvalues = torch.linalg.eigvalsh(gram)
+            except torch.linalg.LinAlgError:
+                report["gram_failure"] = "Gram eigendecomposition did not converge."
+                return report
+            if not torch.isfinite(eigenvalues).all():
+                report["gram_failure"] = "Gram eigendecomposition returned non-finite values."
+                return report
+            relative_cutoff = report["relative_singular_cutoff"] ** 2
+            threshold = eigenvalues[-1] * relative_cutoff
+            report.update(
+                gram_eigenvalues=eigenvalues.detach(),
+                gram_eigenvalue_threshold=float(threshold),
+                gram_rank=int((eigenvalues > threshold).sum().item()),
+            )
+        return report
+
+    def build_command_matrix(self) -> torch.Tensor:
+        matrix, weights, positive, u, singular_values, vh = self._weighted_svd()
+        report = self._rank_diagnostics(weights, singular_values, vh)
+        if report["rank"] != self.n_modes:
+            tail = ", ".join(f"{float(value):.6g}" for value in singular_values[-5:])
             raise ValueError(
                 "The control basis has numerical rank "
-                f"{rank} on the illuminated pupil, but {self.n_modes} modes "
-                "were requested "
-                f"(Gram eigenvalue threshold {float(threshold):.6g}). "
-                "The sampled basis is rank-deficient or ill-conditioned at "
-                "the requested precision and rcond; no modes were removed."
+                f"{report['rank']} on the illuminated pupil, but {self.n_modes} modes "
+                f"were requested (rcond_on={self.rcond_on!r}, singular-value threshold "
+                f"{report['singular_value_threshold']:.6g}, "
+                f"sigma_min/sigma_max={report['sigma_min_over_max']:.6g}; "
+                f"smallest singular values: [{tail}]). No modes were removed. "
+                "Use diagnose() to inspect the original-mode combinations."
             )
-
-        inverse_sqrt = (
-            eigenvectors
-            @ torch.diag_embed(eigenvalues.rsqrt())
-            @ eigenvectors.mT
-        )
-        return command_matrix @ inverse_sqrt
+        # On the illuminated support, A V Sigma^-1 V.T = U V.T. Evaluate
+        # this polar factor directly to avoid cancellation in B @ G^-1/2.
+        result = torch.empty_like(matrix)
+        result[positive] = (u @ vh) / weights[positive, None].sqrt()
+        # Zero-weight pixels still use the SAME Loewdin coefficient transform,
+        # preserving the original basis continuation instead of masking it out.
+        result[~positive] = ((matrix[~positive] @ vh.mT) / singular_values) @ vh
+        if not torch.isfinite(result).all():
+            raise ValueError(
+                "Numerical failure in pupil orthogonalization: the Loewdin "
+                "basis contains non-finite values; no modes were removed."
+            )
+        return result
 
 
 @dataclass

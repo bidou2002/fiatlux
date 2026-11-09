@@ -36,17 +36,22 @@ dtype/device preservation, coordinate gradients and low-order regressions.
 ## Pupil orthogonalization
 
 With normalized intensity weights `W = abs(P)**2 / sum(abs(P)**2)`,
-`PupilOrthogonalizedBasis` uses the Gram matrix `G = B.T @ W @ B` and symmetric
-Löwdin orthogonalization. Its existing default eigenvalue cutoff remains
-`eps(input_dtype) * n_modes * max_eigenvalue`; an explicit `rcond` retains its
-existing meaning.
+`PupilOrthogonalizedBasis` now computes the symmetric Löwdin transform from a
+direct SVD of `sqrt(W) @ B`, restricted to positive-weight pixels. It does not
+form `G = B.T @ W @ B` in the construction path.
 
-Non-finite Gram matrices or eigensolver results, and eigensolver convergence
-failures, raise an explicit numerical error before any rank is reported.
-A finite matrix may still have a deficient **numerical** rank at the requested
-precision/cutoff, from pupil obscuration, sampling or conditioning. That case
-reports the rank and eigenvalue threshold. The method does not silently remove
-modes or change `rcond`.
+Existing calls retain the Gram-relative meaning of `rcond`, including the
+default `eps(input_dtype) * n_modes`. The equivalent singular cutoff is its
+square root. Explicitly selecting `rcond_on="singular_values"` uses a relative
+singular-value cutoff instead, with default
+`eps(input_dtype) * max(n_positive_pixels, n_modes)`.
+
+Non-finite weighted matrices, SVD results or output modes, and SVD convergence
+failures, raise explicit numerical errors before a usable basis is returned.
+A rank failure reports the numerical rank, singular cutoff and spectral tail;
+no directions are silently removed. `diagnose(compare_gram=True)` also returns
+the right singular combinations and compares with the Gram at the equivalent
+cutoff. See [the full SVD/ELT investigation](pupil_orthogonalization.md).
 
 Reproduce the complete high-order case from an installed checkout:
 
@@ -54,16 +59,17 @@ Reproduce the complete high-order case from an installed checkout:
 python benchmarks/zernike_stability.py
 ```
 
-The script retains all 3240 requested modes on a 128 × 128 grid, in both
+This legacy-policy benchmark retains all 3240 requested modes on a 128 × 128 grid, in both
 precisions, and uses the analytical ELT pupil with its default obscuration and
 spiders (40 m sampled extent). It compares the Gram-based rank with an
 independent float64 SVD of `sqrt(W) @ B`, applying the **same Gram cutoff** to
 the squared singular values. When orthogonalization succeeds, it reports the
 maximum entry and relative Frobenius norm of `B.T @ W @ B - I`.
 
-For this particular high-order sampled ELT case, finite Zernike evaluation does
-not make all requested directions well-conditioned: the independent SVD can
-confirm a numerical rank below 3240. This is distinct from the former overflow
-and false rank-zero diagnostic. The unit tests also measure the orthogonality
-error on a resolved 120-mode ELT subspace and retain a separate exact rank-loss
-regression; that smaller test is not a substitute for the full 3240-mode check.
+For this particular 40 m high-order sampled ELT case, the independent SVD
+confirms directions below even the singular-value default cutoff. This is
+distinct from the former overflow and false rank-zero diagnostic. The tests
+also cover a fully retained 3240-mode float64 case at 37 m, including weighted
+orthogonality, reconstruction and whole-grid subspace preservation. The 37 m
+and 40 m domains are different inputs and must not be compared as if only the
+solver had changed.

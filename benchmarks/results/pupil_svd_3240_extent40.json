@@ -1,0 +1,388 @@
+{
+  "torch_version": "2.15.0+cpu",
+  "cases": [
+    {
+      "size": 128,
+      "extent_m": 40.0,
+      "dtype": "torch.float64",
+      "device": "cpu",
+      "modes": 3240,
+      "positive_pixels": 10666,
+      "illuminated_pixels_outside_zernike_disk": 14,
+      "circular_mask": false,
+      "central_obscuration_radius_m": 5.5,
+      "spider_width_m": 0.5,
+      "solver": "direct_SVD_A",
+      "sigma_max": 1.8104857752797905,
+      "sigma_min": 7.733539978631464e-14,
+      "sigma_min_over_max": 4.271527611111074e-14,
+      "smallest_singular_values": [
+        4.686297293138262e-10,
+        4.2681522017319935e-10,
+        3.096658747218224e-10,
+        2.993222524369853e-10,
+        1.602299863813014e-10,
+        1.0013854199807771e-10,
+        9.432392650964427e-11,
+        7.072081272709063e-11,
+        4.2796824354041644e-11,
+        4.158145839822013e-11,
+        2.975193163287685e-11,
+        1.370109242439727e-11,
+        1.2043290212173104e-11,
+        3.555337388686838e-12,
+        3.1755837339403117e-12,
+        1.6756692379485993e-12,
+        9.974445892145387e-13,
+        1.751667451743888e-13,
+        9.827789819973558e-14,
+        7.733539978631464e-14
+      ],
+      "direct_svd_relative_cutoff": 2.368327756130384e-12,
+      "direct_svd_absolute_cutoff": 4.2878237136743646e-12,
+      "direct_svd_rank": 3233,
+      "legacy_gram_relative_cutoff": 7.194245199571014e-13,
+      "legacy_gram_absolute_cutoff": 2.358171952303401e-12,
+      "legacy_gram_rank": 3108,
+      "svd_rank_at_legacy_gram_cutoff": 3108,
+      "gram_rank_at_direct_svd_cutoff": 3204,
+      "smallest_gram_eigenvalues": [
+        -8.770726378007336e-15,
+        -7.60283491876267e-15,
+        -7.276331426758837e-15,
+        -5.7251289208765635e-15,
+        -5.650210020423815e-15,
+        -5.371709933762815e-15,
+        -5.201902777699661e-15,
+        -4.865395945988678e-15,
+        -4.260468351747005e-15,
+        -4.1589964680083406e-15,
+        -4.099649698597942e-15,
+        -3.92176145848521e-15,
+        -3.83315343300548e-15,
+        -3.766476735558457e-15,
+        -3.756530750907752e-15,
+        -3.2805831739963764e-15,
+        -3.074969641132365e-15,
+        -2.8835912069891e-15,
+        -2.7584609367609814e-15,
+        -2.569768331487701e-15
+      ],
+      "literal_vs_polar_weighted_sample_max_error": 0.0007892340952131023,
+      "polar_orthogonality_error_max": 9.992007221626409e-15,
+      "polar_orthogonality_error_relative_frobenius": 1.1281991724398515e-14,
+      "weighted_B_reconstruction_relative_error": 1.4040672718682413e-14,
+      "weighted_Q_span_relative_error": 5.7423490219506614e-15,
+      "accepted_by_direct_svd_policy": false,
+      "disk_area_fractions": {
+        "illuminated": 0.8424549193293261,
+        "central_obscuration": 0.07695349572919961,
+        "spiders": 0.03037013603290098,
+        "other_occulted": 0.05022144890857324
+      },
+      "weak_directions": [
+        {
+          "singular_value": 1.6756692379485993e-12,
+          "passes_direct_svd": false,
+          "energy_fractions": {
+            "illuminated": 9.665095755185317e-24,
+            "central_obscuration": 1.974010433854022e-09,
+            "spiders": 0.053678239291577425,
+            "other_occulted": 0.9463217587344122
+          },
+          "largest_original_mode_coefficients": [
+            {
+              "noll": 258,
+              "radial": 22,
+              "azimuthal": 4,
+              "coefficient": 0.09492275029266269
+            },
+            {
+              "noll": 304,
+              "radial": 24,
+              "azimuthal": 4,
+              "coefficient": 0.09408775560480795
+            },
+            {
+              "noll": 262,
+              "radial": 22,
+              "azimuthal": 8,
+              "coefficient": 0.09319751574938984
+            },
+            {
+              "noll": 308,
+              "radial": 24,
+              "azimuthal": 8,
+              "coefficient": 0.09263213780461646
+            },
+            {
+              "noll": 214,
+              "radial": 20,
+              "azimuthal": 4,
+              "coefficient": 0.09205665516440904
+            },
+            {
+              "noll": 266,
+              "radial": 22,
+              "azimuthal": 12,
+              "coefficient": 0.090349869372626
+            },
+            {
+              "noll": 312,
+              "radial": 24,
+              "azimuthal": 12,
+              "coefficient": 0.0902297546583258
+            },
+            {
+              "noll": 218,
+              "radial": 20,
+              "azimuthal": 8,
+              "coefficient": 0.09005869593562227
+            }
+          ]
+        },
+        {
+          "singular_value": 9.974445892145387e-13,
+          "passes_direct_svd": false,
+          "energy_fractions": {
+            "illuminated": 3.1633016266295048e-24,
+            "central_obscuration": 2.133181337116329e-09,
+            "spiders": 0.052658660580766285,
+            "other_occulted": 0.9473413372860524
+          },
+          "largest_original_mode_coefficients": [
+            {
+              "noll": 299,
+              "radial": 23,
+              "azimuthal": -23,
+              "coefficient": 0.14014771559371433
+            },
+            {
+              "noll": 324,
+              "radial": 24,
+              "azimuthal": 24,
+              "coefficient": 0.13830799665823906
+            },
+            {
+              "noll": 351,
+              "radial": 25,
+              "azimuthal": -25,
+              "coefficient": -0.13603062512757674
+            },
+            {
+              "noll": 276,
+              "radial": 22,
+              "azimuthal": 22,
+              "coefficient": -0.13579783241572743
+            },
+            {
+              "noll": 253,
+              "radial": 21,
+              "azimuthal": -21,
+              "coefficient": -0.13414612183964258
+            },
+            {
+              "noll": 230,
+              "radial": 20,
+              "azimuthal": 20,
+              "coefficient": 0.13291930712583044
+            },
+            {
+              "noll": 378,
+              "radial": 26,
+              "azimuthal": 26,
+              "coefficient": -0.13107467592711844
+            },
+            {
+              "noll": 405,
+              "radial": 27,
+              "azimuthal": -27,
+              "coefficient": 0.13096916593149638
+            }
+          ]
+        },
+        {
+          "singular_value": 1.751667451743888e-13,
+          "passes_direct_svd": false,
+          "energy_fractions": {
+            "illuminated": 2.486945963226512e-24,
+            "central_obscuration": 2.9440428120281395e-10,
+            "spiders": 0.021606000079979853,
+            "other_occulted": 0.9783939996256159
+          },
+          "largest_original_mode_coefficients": [
+            {
+              "noll": 58,
+              "radial": 10,
+              "azimuthal": 2,
+              "coefficient": 0.13898050710051252
+            },
+            {
+              "noll": 62,
+              "radial": 10,
+              "azimuthal": 6,
+              "coefficient": 0.1389217066314107
+            },
+            {
+              "noll": 66,
+              "radial": 10,
+              "azimuthal": 10,
+              "coefficient": 0.1388072200511909
+            },
+            {
+              "noll": 38,
+              "radial": 8,
+              "azimuthal": 2,
+              "coefficient": 0.1367488585189389
+            },
+            {
+              "noll": 42,
+              "radial": 8,
+              "azimuthal": 6,
+              "coefficient": 0.13669129086340345
+            },
+            {
+              "noll": 80,
+              "radial": 12,
+              "azimuthal": 2,
+              "coefficient": 0.13651747255533792
+            },
+            {
+              "noll": 84,
+              "radial": 12,
+              "azimuthal": 6,
+              "coefficient": 0.13645936968982947
+            },
+            {
+              "noll": 88,
+              "radial": 12,
+              "azimuthal": 10,
+              "coefficient": 0.1363462904350203
+            }
+          ]
+        },
+        {
+          "singular_value": 9.827789819973558e-14,
+          "passes_direct_svd": false,
+          "energy_fractions": {
+            "illuminated": 6.383879689044729e-25,
+            "central_obscuration": 2.738776431741403e-11,
+            "spiders": 0.04265322061337467,
+            "other_occulted": 0.9573467793592375
+          },
+          "largest_original_mode_coefficients": [
+            {
+              "noll": 53,
+              "radial": 9,
+              "azimuthal": -7,
+              "coefficient": -0.12203647556019603
+            },
+            {
+              "noll": 77,
+              "radial": 11,
+              "azimuthal": -11,
+              "coefficient": -0.12200539505633658
+            },
+            {
+              "noll": 55,
+              "radial": 9,
+              "azimuthal": -9,
+              "coefficient": 0.12199078406750995
+            },
+            {
+              "noll": 49,
+              "radial": 9,
+              "azimuthal": -3,
+              "coefficient": -0.12198778097548132
+            },
+            {
+              "noll": 51,
+              "radial": 9,
+              "azimuthal": -5,
+              "coefficient": 0.12196552945533845
+            },
+            {
+              "noll": 47,
+              "radial": 9,
+              "azimuthal": -1,
+              "coefficient": 0.12196496774233039
+            },
+            {
+              "noll": 73,
+              "radial": 11,
+              "azimuthal": -7,
+              "coefficient": -0.1219337925635898
+            },
+            {
+              "noll": 75,
+              "radial": 11,
+              "azimuthal": -9,
+              "coefficient": 0.1218871565159388
+            }
+          ]
+        },
+        {
+          "singular_value": 7.733539978631464e-14,
+          "passes_direct_svd": false,
+          "energy_fractions": {
+            "illuminated": 4.862046158665272e-26,
+            "central_obscuration": 1.4598713716682424e-13,
+            "spiders": 0.0003962921919151718,
+            "other_occulted": 0.9996037078079387
+          },
+          "largest_original_mode_coefficients": [
+            {
+              "noll": 170,
+              "radial": 17,
+              "azimuthal": 17,
+              "coefficient": -0.12893694750447773
+            },
+            {
+              "noll": 210,
+              "radial": 19,
+              "azimuthal": 19,
+              "coefficient": 0.1260315942121827
+            },
+            {
+              "noll": 136,
+              "radial": 15,
+              "azimuthal": 15,
+              "coefficient": 0.12384743866922407
+            },
+            {
+              "noll": 189,
+              "radial": 18,
+              "azimuthal": -18,
+              "coefficient": 0.12329335441103165
+            },
+            {
+              "noll": 153,
+              "radial": 16,
+              "azimuthal": -16,
+              "coefficient": -0.12245398215433563
+            },
+            {
+              "noll": 252,
+              "radial": 21,
+              "azimuthal": 21,
+              "coefficient": -0.12135217132796014
+            },
+            {
+              "noll": 231,
+              "radial": 20,
+              "azimuthal": -20,
+              "coefficient": -0.11943415026410947
+            },
+            {
+              "noll": 104,
+              "radial": 13,
+              "azimuthal": 13,
+              "coefficient": -0.11671228138288836
+            }
+          ]
+        }
+      ],
+      "seconds": 64.47851623099996
+    }
+  ]
+}

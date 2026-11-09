@@ -130,6 +130,10 @@ Any of these bases can be wrapped in `PupilOrthogonalizedBasis` to obtain modes
 with unit RMS that are mutually orthogonal under the intensity transmitted by a
 built pupil. This makes it possible to simulate both modal and actuator-based
 wavefront correction without assuming an unobscured circular aperture.
+The symmetric Löwdin transform uses a direct weighted SVD. Existing calls keep
+the historical Gram-relative rank policy; use `rcond_on="singular_values"`
+for a rank cutoff on the singular values themselves. See
+[pupil orthogonalization and ELT diagnostics](docs/pupil_orthogonalization.md).
 
 High-order Zernike radial polynomials use a stable Jacobi recurrence with
 float64 intermediates for float32 inputs. Noll normalization is continuous on
