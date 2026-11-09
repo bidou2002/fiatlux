@@ -3,7 +3,12 @@ import math
 
 
 def R(n, m, rho):
-    """Compute R[n, m], the Zernike radial polynomial
+    """Compute R[n, m] using a stable Jacobi three-term recurrence.
+
+    ``R[n, m](rho) = rho**abs(m) * P[(n-abs(m))/2]^(0,abs(m))(2*rho**2-1)``.
+    The recurrence follows DLMF 18.9.1--18.9.2, avoiding the cancellation of
+    large alternating factorial coefficients. Single-precision inputs use
+    float64 intermediates on the same device, then return the input dtype.
 
     Parameters
     ----------
@@ -14,24 +19,31 @@ def R(n, m, rho):
         unit circle
     """
 
-    m = int(torch.abs(torch.as_tensor(m)))
-    n = int(torch.abs(torch.as_tensor(n)))
-    output = torch.zeros_like(rho)
-    if (n - m) % 2 != 0:
-        return output
-    else:
-        for k in range(int((n - m) / 2) + 1):
-            coef = (
-                (-1) ** k
-                * math.factorial(n - k)
-                / (
-                    math.factorial(k)
-                    * math.factorial(int((n + m) / 2) - k)
-                    * math.factorial(int((n - m) / 2) - k)
-                )
-            )
-            output += coef * rho ** (n - 2 * k)
-        return output
+    m, n = abs(int(m)), abs(int(n))
+    if n < m or (n - m) % 2:
+        return torch.zeros_like(rho)
+
+    work = rho.to(torch.float64) if rho.dtype in (
+        torch.float16, torch.bfloat16, torch.float32
+    ) else rho
+    degree = (n - m) // 2
+    radial_power = work.pow(m)
+    if degree == 0:
+        return radial_power.to(dtype=rho.dtype)
+
+    x = 2 * work.square() - 1
+    previous = torch.ones_like(work)
+    current = ((m + 2) * x - m) / 2
+    for k in range(1, degree):
+        total = 2 * k + m
+        denominator = 2 * (k + 1) * (k + m + 1)
+        a = (total + 1) * (total + 2) / denominator
+        b = -(m * m) * (total + 1) / (denominator * total)
+        c = k * (k + m) * (total + 2) / (
+            (k + 1) * (k + m + 1) * total
+        )
+        previous, current = current, (a * x + b) * current - c * previous
+    return (radial_power * current).to(dtype=rho.dtype)
 
 
 def zernike(
@@ -109,14 +121,20 @@ def zernike(
     if not torch.all(torch.asarray(rho.shape == theta.shape)):
         raise ValueError("The rho and theta arrays do not have consistent shape.")
 
+    output_dtype = rho.dtype
+    if output_dtype in (torch.float16, torch.bfloat16, torch.float32):
+        rho, theta = rho.to(torch.float64), theta.to(torch.float64)
     aperture = (rho <= 1).to(rho.dtype)
+    # Exterior values are replaced below. Do not evaluate a high-degree
+    # polynomial there: overflow outside the disk can poison its gradients.
+    radial_rho = torch.where(rho <= 1, rho, torch.zeros_like(rho))
 
     if m == 0:
         if n == 0:
             zernike_result = aperture
         else:
             norm_coeff = math.sqrt(n + 1) if noll_normalize else 1
-            zernike_result = norm_coeff * R(n, m, rho) * aperture
+            zernike_result = norm_coeff * R(n, m, radial_rho) * aperture
     elif m > 0:
         norm_coeff = (
             math.sqrt(2) * math.sqrt(n + 1)
@@ -125,7 +143,7 @@ def zernike(
         )
         zernike_result = (
             norm_coeff
-            * R(n, m, rho)
+            * R(n, m, radial_rho)
             * torch.cos(abs(m) * theta)
             * aperture
         )
@@ -137,13 +155,13 @@ def zernike(
         )
         zernike_result = (
             norm_coeff
-            * R(n, m, rho)
+            * R(n, m, radial_rho)
             * torch.sin(abs(m) * theta)
             * aperture
         )
 
     zernike_result[(rho > 1)] = outside
-    return zernike_result
+    return zernike_result.to(dtype=output_dtype)
 
 
 def noll_indices(j):

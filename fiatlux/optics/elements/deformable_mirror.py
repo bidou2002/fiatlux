@@ -134,7 +134,25 @@ class PupilOrthogonalizedBasis(ControlBasis):
 
         gram = command_matrix.mT @ (weights[:, None] * command_matrix)
         gram = 0.5 * (gram + gram.mT)
-        eigenvalues, eigenvectors = torch.linalg.eigh(gram)
+        if not torch.isfinite(gram).all():
+            raise ValueError(
+                "Numerical failure in pupil orthogonalization: the Gram matrix "
+                "contains non-finite values. Check basis evaluation and precision; "
+                "a rank cannot be determined."
+            )
+        try:
+            eigenvalues, eigenvectors = torch.linalg.eigh(gram)
+        except torch.linalg.LinAlgError as error:
+            raise ValueError(
+                "Numerical failure in pupil orthogonalization: the Gram "
+                "eigendecomposition did not converge; a rank cannot be determined."
+            ) from error
+        if not torch.isfinite(eigenvalues).all() or not torch.isfinite(eigenvectors).all():
+            raise ValueError(
+                "Numerical failure in pupil orthogonalization: the Gram "
+                "eigendecomposition returned non-finite values; "
+                "a rank cannot be determined."
+            )
         largest = eigenvalues[-1]
         default_rcond = torch.finfo(command_matrix.dtype).eps * self.n_modes
         threshold = largest * (
@@ -144,9 +162,12 @@ class PupilOrthogonalizedBasis(ControlBasis):
         rank = int(retained.sum().item())
         if rank != self.n_modes:
             raise ValueError(
-                "The control basis has rank "
+                "The control basis has numerical rank "
                 f"{rank} on the illuminated pupil, but {self.n_modes} modes "
-                "were requested. Remove unsupported modes before orthogonalization."
+                "were requested "
+                f"(Gram eigenvalue threshold {float(threshold):.6g}). "
+                "The sampled basis is rank-deficient or ill-conditioned at "
+                "the requested precision and rcond; no modes were removed."
             )
 
         inverse_sqrt = (

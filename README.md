@@ -131,6 +131,11 @@ with unit RMS that are mutually orthogonal under the intensity transmitted by a
 built pupil. This makes it possible to simulate both modal and actuator-based
 wavefront correction without assuming an unobscured circular aperture.
 
+High-order Zernike radial polynomials use a stable Jacobi recurrence with
+float64 intermediates for float32 inputs. Noll normalization is continuous on
+the unit disk; discrete pupil sampling can still make the control basis poorly
+conditioned. See [high-order evaluation and rank diagnostics](docs/zernike_stability.md).
+
 ### Adaptive optics
 
 The package contains tools for AO-oriented simulations, including:
